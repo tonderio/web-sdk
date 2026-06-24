@@ -1,0 +1,21 @@
+{
+  // Separate project so the E2E sources typecheck WITHOUT polluting the package
+  // build (root tsconfig has rootDir: src / include: ["src"]). `noEmit` because
+  // Playwright transpiles tests itself; this config exists only for `tsc`-level
+  // type safety in CI.
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": ".",
+    "outDir": "../dist-e2e",
+    "types": ["node"],
+    "declaration": false,
+    "declarationMap": false,
+    "sourceMap": false,
+    // The fixture page injects globals (window.Tonder, window.__tonderBridge);
+    // tests reference them inside page.evaluate via the e2e/types ambient decls.
+    "skipLibCheck": true
+  },
+  "include": ["**/*.ts", "types/**/*.d.ts"],
+  "exclude": ["node_modules"]
+}
