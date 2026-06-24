@@ -1,0 +1,72 @@
+{
+  "name": "@tonder.io/web-sdk",
+  "version": "0.1.0",
+  "description": "Browser SDK for accepting Tonder payments with secure card fields, saved cards, and alternative payment methods.",
+  "type": "module",
+  "sideEffects": false,
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "files": [
+    "dist/index.cjs",
+    "dist/index.mjs",
+    "dist/index.d.ts",
+    "dist/tonder-web-sdk.js",
+    "dist/tonder-web-sdk.min.js",
+    "dist/tonder-web-sdk.js.map",
+    "dist/tonder-web-sdk.min.js.map"
+  ],
+  "scripts": {
+    "build": "rollup -c",
+    "prepublishOnly": "npm run build",
+    "dev": "rollup -c -w",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p e2e/tsconfig.json",
+    "pretest:e2e": "npm run build",
+    "test:e2e": "playwright test",
+    "lint": "eslint .",
+    "format": "prettier --write \"src/**/*.ts\" \"e2e/**/*.ts\" \"*.md\"",
+    "prepare": "husky",
+    "format:check": "prettier --check \"src/**/*.ts\" \"e2e/**/*.ts\" \"*.md\""
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tonderio/web-sdk.git"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.17.0",
+    "@playwright/test": "^1.61.1",
+    "@rollup/plugin-node-resolve": "^15.3.0",
+    "@rollup/plugin-terser": "^1.0.0",
+    "@rollup/plugin-typescript": "^12.1.1",
+    "@types/node": "^26.0.1",
+    "@typescript-eslint/eslint-plugin": "^8.18.0",
+    "@typescript-eslint/parser": "^8.18.0",
+    "eslint": "^9.17.0",
+    "husky": "^9.1.7",
+    "jsdom": "^29.1.1",
+    "lint-staged": "^15.5.2",
+    "prettier": "^3.4.2",
+    "rollup": "^4.28.1",
+    "rollup-plugin-dts": "^6.1.1",
+    "tslib": "^2.8.1",
+    "typescript": "^5.7.2",
+    "typescript-eslint": "^8.18.0",
+    "vitest": "^4.1.9"
+  },
+  "lint-staged": {
+    "*.{ts,tsx,js,mjs,json,md}": "prettier --write"
+  }
+}

@@ -1,0 +1,20 @@
+change: standardize-public-payloads-snake-case
+status: specifying
+mode: interactive
+artifact_store: hybrid
+project: web-sdk
+created: "2026-07-06"
+current_phase: specs
+phases:
+  proposal: complete
+  specs: complete
+  design: pending
+  tasks: pending
+  apply: pending
+  verify: pending
+  archive: pending
+decisions:
+  - Public object fields use snake_case consistently.
+  - JavaScript method/class names remain camelCase.
+  - RawTransaction is not renamed or remapped.
+  - Embedded payflow bridge postMessage control field remains event.

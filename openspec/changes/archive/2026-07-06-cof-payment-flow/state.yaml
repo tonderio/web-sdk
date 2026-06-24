@@ -1,0 +1,28 @@
+change: cof-payment-flow
+status: archived
+mode: interactive
+artifact_store: hybrid
+project: web-sdk
+created: "2026-07-06"
+current_phase: complete
+phases:
+  explore: complete
+  proposal: complete
+  specs: complete
+  design: complete
+  tasks: complete
+  apply: complete
+  verify: complete
+  archive: complete
+next_phase: []
+notes:
+  - "Design completed: compose existing CofService enrollment in pay(card) for COF-active businesses, then process token-only saved-card payload with narrow process-throw rollback."
+  - "User requested /sdd-new for missing COF flow in pay(), comparing ionic-lite legacy LiteCheckout to new @tonder.io/web-sdk."
+  - "User selected interactive mode and hybrid artifact store (Engram + OpenSpec files)."
+  - "Proposal sets automatic inline COF enrollment for COF-active new-card pay(), followed by token-only Direct API processing."
+  - "Spec delta created for COF-active new-card pay(): auto-enroll, token-only process payload, precise rollback boundary."
+  - "Apply completed: COF-active pay(card) auto-enrolls through CofService, processes saved-card token-only payload, and rolls back only process transport throws before a transaction body."
+  - "Verify completed: PASS WITH WARNINGS; targeted Vitest, typecheck, and full npm test passed. Warning: unrelated public API diffs exist in the dirty workspace."
+  - "Re-verify completed after JSDoc fix: PASS WITH WARNINGS; Tonder.pay() docs now mention COF-active auto-enrollment, targeted Vitest, typecheck, and full npm test passed. Warning remains limited to unrelated dirty-workspace public API diffs."
+
+archived: "2026-07-06"
