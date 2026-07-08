@@ -1,0 +1,54 @@
+schema: spec-driven
+
+project: "@tonder.io/web-sdk"
+engram_project: web-sdk
+repo: github.com/tonderio/web-sdk
+initialized: "2026-06-24"
+
+context: |
+  Tech stack: TypeScript + Rollup (outputs ESM, CJS, IIFE, .d.ts)
+  Architecture: Ports & Adapters (hexagonal-lite); Facade + Strategy backbone
+  Layout: src/{ index.ts, tonder.ts (composition root), core/, ports/, adapters/, widgets/, shared/ }
+  Patterns: Facade, Strategy, Factory Method, Adapter, Observer, Composite, Mediator; ServiceManager = Service Locator
+  Conventions: named exports, no heavy barrels, tree-shakeable; core/ must be pure (no DOM/HTTP imports)
+  Status: greenfield — no package.json yet; scaffolding change will introduce Vitest as test runner
+
+testing:
+  strict_tdd: true
+  reason: "Vitest is operational (jsdom env, smoke test passing). Strict TDD enabled for subsequent changes."
+  recommended_runner: vitest
+  test_command: "vitest run"
+  build_command: "rollup -c"
+  coverage_threshold: 0
+  layers:
+    unit: true
+    integration: false
+    e2e: false
+
+rules:
+  proposal:
+    - Include rollback plan for risky changes
+    - Reference Tonder Direct API endpoints when relevant
+  specs:
+    - Use Given/When/Then for scenarios
+    - Use RFC 2119 keywords (MUST, SHALL, SHOULD, MAY)
+    - Keep core/ specs free of DOM/HTTP concerns
+  design:
+    - Include sequence diagrams for complex flows
+    - Document architecture decisions with rationale
+    - Validate port/adapter boundaries are respected
+  tasks:
+    - Group by phase, use hierarchical numbering
+    - Keep tasks completable in one session
+    - Flag tasks that touch more than one architecture layer
+  apply:
+    - Follow hexagonal-lite boundaries (core/ must not import from adapters/ or DOM APIs)
+    - Use named exports; avoid default-export-only modules
+    tdd: true
+    test_command: "vitest run"
+  verify:
+    test_command: "vitest run"
+    build_command: "rollup -c"
+    coverage_threshold: 0
+  archive:
+    - Warn before merging destructive deltas
