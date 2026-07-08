@@ -1049,6 +1049,8 @@ import type {
 } from '@tonder.io/web-sdk';
 ```
 
+If you load the SDK runtime from the CDN in a TypeScript app, you can still install `@tonder.io/web-sdk` as a devDependency for types only. See [CDN with TypeScript types](#cdn-with-typescript-types).
+
 ### `RawTransaction`
 
 `pay()` and `getTransaction()` return transaction fields in `snake_case`, matching Tonder API and webhook payloads.
@@ -1291,3 +1293,31 @@ For browser `<script>` usage, load the SDK from the environment CDN:
   const { createTonder } = window.Tonder;
 </script>
 ```
+
+### CDN with TypeScript types
+
+The CDN build exposes the SDK at `window.Tonder`. If a React, Angular, or TypeScript app loads the runtime from the CDN, TypeScript does not automatically know the global SDK shape.
+
+You can install the npm package as a development dependency only for types while still using the CDN runtime:
+
+```bash
+npm install -D @tonder.io/web-sdk
+```
+
+```ts
+import type * as TonderWebSdk from '@tonder.io/web-sdk';
+
+declare global {
+  interface Window {
+    Tonder: typeof TonderWebSdk;
+  }
+}
+```
+
+Keep the CDN script in your HTML entry point and use the browser global at runtime:
+
+```ts
+const { createTonder } = window.Tonder;
+```
+
+Do not import runtime code from `@tonder.io/web-sdk` when using the CDN setup. The package is installed only as a devDependency for TypeScript types.
