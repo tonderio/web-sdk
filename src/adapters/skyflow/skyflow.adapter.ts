@@ -16,9 +16,11 @@ import type {
 } from '../../types/card';
 import type {
   CardFieldsCustomization,
+  CollectInputStyles,
   ErrorTextStyles,
   FieldStyles,
   LabelStyles,
+  StyleBlock,
 } from '../../types/customization';
 import type {
   SkyflowCollectContainer,
@@ -115,7 +117,7 @@ const REVEAL_DEFAULT_CONTAINER_ID: Record<RevealableCardField, string> = {
 
 const DEFAULT_FONT_FAMILY = '"Inter", sans-serif';
 
-const DEFAULT_INPUT_STYLES = {
+const DEFAULT_INPUT_STYLES: CollectInputStyles = {
   base: {
     border: '1px solid #e0e0e0',
     padding: '10px 7px',
@@ -147,6 +149,67 @@ const DEFAULT_INPUT_STYLES = {
       'url("https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;700&display=swap")',
   },
 };
+
+function isStyleObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function mergeStyleBlock(
+  base: StyleBlock | undefined,
+  override: StyleBlock | undefined,
+): StyleBlock | undefined {
+  if (!base) return override;
+  if (!override) return base;
+
+  const merged: StyleBlock = { ...base };
+  for (const [key, value] of Object.entries(override)) {
+    const current = merged[key];
+    merged[key] =
+      isStyleObject(current) && isStyleObject(value)
+        ? mergeStyleBlock(current, value)
+        : value;
+  }
+  return merged;
+}
+
+function mergeStyleVariants<T extends object>(
+  base: T | undefined,
+  override: T | undefined,
+): T | undefined {
+  if (!base) return override;
+  if (!override) return base;
+
+  const merged = { ...base } as T;
+  const baseRecord = base as Record<string, StyleBlock | undefined>;
+  const overrideRecord = override as Record<string, StyleBlock | undefined>;
+  const mergedRecord = merged as Record<string, StyleBlock | undefined>;
+
+  for (const key of Object.keys(overrideRecord)) {
+    mergedRecord[key] = mergeStyleBlock(baseRecord[key], overrideRecord[key]);
+  }
+  return merged;
+}
+
+function mergeFieldStyles(
+  defaults: FieldStyles,
+  form: FieldStyles | undefined,
+  perField: FieldStyles | undefined,
+): FieldStyles {
+  return {
+    input_styles: mergeStyleVariants(
+      mergeStyleVariants(defaults.input_styles, form?.input_styles),
+      perField?.input_styles,
+    ),
+    label_styles: mergeStyleVariants(
+      mergeStyleVariants(defaults.label_styles, form?.label_styles),
+      perField?.label_styles,
+    ),
+    error_styles: mergeStyleVariants(
+      mergeStyleVariants(defaults.error_styles, form?.error_styles),
+      perField?.error_styles,
+    ),
+  };
+}
 const DEFAULT_LABEL_STYLES: LabelStyles = {
   base: {
     fontSize: '12px',
@@ -580,28 +643,33 @@ export class SkyflowAdapter implements TokenizerPort {
     const styles = this.deps.customization?.styles;
     const perField = styles?.[STYLE_KEY_BY_FIELD[field]];
     const form = styles?.card_form;
-
-    const resolvedInput =
-      perField?.input_styles ?? form?.input_styles ?? DEFAULT_INPUT_STYLES;
+    const resolved = mergeFieldStyles(
+      {
+        input_styles: DEFAULT_INPUT_STYLES,
+        label_styles: DEFAULT_LABEL_STYLES,
+        error_styles: DEFAULT_ERROR_STYLES,
+      },
+      form,
+      perField,
+    );
 
     const iconVisible =
       field === 'card_number' && styles?.enable_card_icon !== false;
     const input_styles = iconVisible
       ? {
-          ...resolvedInput,
+          ...resolved.input_styles,
           base: {
             paddingLeft: CARD_NUMBER_PADDING_LEFT,
-            ...(resolvedInput as { base?: Record<string, unknown> }).base,
+            ...(resolved.input_styles as { base?: Record<string, unknown> })
+              .base,
           },
         }
-      : resolvedInput;
+      : resolved.input_styles;
 
     return {
       inputStyles: input_styles,
-      labelStyles:
-        perField?.label_styles ?? form?.label_styles ?? DEFAULT_LABEL_STYLES,
-      errorStyles:
-        perField?.error_styles ?? form?.error_styles ?? DEFAULT_ERROR_STYLES,
+      labelStyles: resolved.label_styles,
+      errorStyles: resolved.error_styles,
     } as unknown as FieldStyles;
   }
 
