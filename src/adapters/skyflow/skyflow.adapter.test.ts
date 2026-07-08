@@ -672,6 +672,36 @@ describe('SkyflowAdapter — styling resolution', () => {
     ).toBe('green');
   });
 
+  it('deep merges field style overrides with the SDK defaults', async () => {
+    addContainer('collect-cardholder-name');
+    const { adapter, fake } = buildAdapter({
+      customization: {
+        styles: {
+          cardholder_name: {
+            input_styles: {
+              base: { height: '200px' },
+            },
+          },
+        },
+      },
+    });
+
+    await adapter.mount({ fields: ['cardholder_name'] });
+
+    const input = fake.collectContainer.__elements[0].__input;
+    const inputStyles = input.inputStyles as {
+      base: Record<string, unknown>;
+      invalid: Record<string, unknown>;
+      global: Record<string, unknown>;
+    };
+
+    expect(inputStyles.base.height).toBe('200px');
+    expect(inputStyles.base.border).toBe('1px solid #e0e0e0');
+    expect(inputStyles.base.borderRadius).toBe('5px');
+    expect(inputStyles.invalid.border).toBe('1px solid #f44336');
+    expect(inputStyles.global['@import']).toContain('fonts.googleapis.com');
+  });
+
   it('injects a default paddingLeft for card_number when the card icon is enabled', async () => {
     addContainer('collect-card-number');
     const { adapter, fake } = buildAdapter();
