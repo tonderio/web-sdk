@@ -61,14 +61,23 @@ You need:
 
 ```html
 <form id="checkout-form">
-  <div id="collect-cardholder-name"></div>
-  <div id="collect-card-number"></div>
-  <div id="collect-expiration-month"></div>
-  <div id="collect-expiration-year"></div>
-  <div id="collect-cvv"></div>
+  <div id="collect-cardholder-name" class="card-field"></div>
+  <div id="collect-card-number" class="card-field"></div>
+  <div id="collect-expiration-month" class="card-field"></div>
+  <div id="collect-expiration-year" class="card-field"></div>
+  <div id="collect-cvv" class="card-field"></div>
 
   <button type="submit">Pay</button>
 </form>
+```
+
+Reserve layout space for each SDK mount container so the secure iframe does not visually resize after it loads:
+
+```css
+.card-field {
+  width: 100%;
+  min-height: 90px;
+}
 ```
 
 ### 2. Initialize, mount, and pay
@@ -255,6 +264,8 @@ Configure secure card-field copy and styles through `customization.card_fields` 
 | `global` | Global validation-message style overrides supported by the secure renderer. |
 
 Style values use CSS-in-JS keys supported by the secure card-field renderer, for example `font_size`, `font_family`, `color`, `border_color`, or `letter_spacing`.
+
+`customization.card_fields.styles` styles SDK-rendered content inside the secure iframe, including the secure input, label, validation message, and card icon. Keep merchant layout sizing for the mount containers in CSS, for example `.card-field { width: 100%; min-height: 90px; }`.
 
 #### Error messages
 
@@ -608,6 +619,8 @@ interface CardFieldsComponent {
 ### `card_fields.mount()`
 
 Mounts secure card fields into the configured containers.
+
+Each container should reserve enough layout space before `mount()` runs, for example `.card-field { width: 100%; min-height: 90px; }`, to avoid a visual jump while the secure iframe initializes.
 
 #### Request
 
