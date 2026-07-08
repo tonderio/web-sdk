@@ -2,6 +2,10 @@
 
 Browser TypeScript SDK for accepting payments with Tonder. It provides secure card fields, new-card and saved-card payments, hosted/3DS presentation, payment-method discovery, transaction lookup, and webhook-friendly transaction responses.
 
+> ✨ **AI-assisted integration**
+>
+> Want an AI agent to help wire Tonder into your app? Use [Tonder AI Integrations](https://github.com/tonderio/tonder-ai-integrations/) to guide HTML, React, and Angular Web SDK setup with secure card fields, saved cards, payment methods, and SafetyPay flows.
+
 ## Contents
 
 - [Install](#install)
