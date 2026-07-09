@@ -708,17 +708,27 @@ Creates a payment.
 ```ts
 interface PayInput {
   amount: number;
-  currency?: string; // defaults to 'MXN'
+  currency?: string;
   return_url: string;
   payment_method:
     | { type: 'card' }
     | { type: 'saved_card'; card_id: string }
     | { type: string; config?: Record<string, unknown> };
   metadata?: Record<string, unknown>;
-  client_reference: string; // required business reference for dashboards, exports, webhooks
-  idempotency_key?: string; // optional retry-safe key for this payment attempt
+  client_reference: string;
+  idempotency_key?: string;
 }
 ```
+
+| Field              | Required | Description                                                                                                    |
+| ------------------ | -------- | -------------------------------------------------------------------------------------------------------------- |
+| `amount`           | Yes      | Payment amount. Must be greater than `0`.                                                                      |
+| `currency`         | No       | Currency code. Defaults to `MXN` when omitted.                                                                 |
+| `return_url`       | Yes      | URL used after hosted authentication or redirect completion.                                                   |
+| `payment_method`   | Yes      | Payment method to charge: new card, saved card, or an enabled alternative payment method.                      |
+| `client_reference` | Yes      | Merchant order/reference shown in dashboards, exports, webhooks, transaction records, and transaction reports. |
+| `idempotency_key`  | No       | Recommended stable key for the same payment attempt so retries do not create duplicate charges.                |
+| `metadata`         | No       | Non-sensitive merchant context for reconciliation and reports.                                                 |
 
 Examples:
 
@@ -752,7 +762,18 @@ await tonder.pay({
 });
 ```
 
-`client_reference` is the required merchant/business reference that remains in the payment payload and appears in dashboards, exports, webhooks, and transaction records. Use `idempotency_key` only when you want retries of the same payment attempt to be recognized as duplicates. It is handled internally as a business-scoped request key, is not included in the payment body, and does not replace `client_reference`.
+`client_reference` is the required merchant/business reference that remains in the payment payload and appears in dashboards, exports, webhooks, transaction records, and transaction reports as the customer order reference.
+
+`idempotency_key` is important for retry-safe checkout flows: keep it stable for the same payment attempt so retries do not create duplicate charges. Do not reuse `client_reference` as the idempotency key.
+
+Use `metadata` for non-sensitive merchant context that helps reconciliation and reports. You can send any JSON-safe fields your commerce system needs. These metadata keys have reporting meaning when present:
+
+| Metadata key     | Report usage                                                                                |
+| ---------------- | ------------------------------------------------------------------------------------------- |
+| `operation_date` | Business operation date/time for reporting and reconciliation.                              |
+| `customer_email` | Customer email shown in transaction reports; falls back to the customer email when omitted. |
+| `customer_id`    | Merchant customer identifier for report filtering and reconciliation.                       |
+| `business_user`  | Internal user, POS terminal, cashier, or automation that initiated the payment.             |
 
 ```ts
 await tonder.pay({
@@ -760,6 +781,12 @@ await tonder.pay({
   return_url: 'https://yourstore.example/checkout/return',
   client_reference: 'order_1001',
   idempotency_key: 'checkout-attempt-1001-1',
+  metadata: {
+    customer_email: 'ada@example.com',
+    customer_id: 'cus_123',
+    business_user: 'pos-terminal-4',
+    // ... other fields
+  },
   payment_method: { type: 'card' },
 });
 ```
