@@ -56,6 +56,55 @@ You need:
 - A server endpoint that can create a short-lived `secure_token` when using saved cards/Card on File.
 - A webhook endpoint for reliable payment fulfillment.
 
+## Public browser configuration
+
+Read deployment-specific SDK values from your app's public browser configuration instead of hardcoding real merchant values in checkout code. The Tonder public API key is safe to expose to the browser, but keeping it in config makes environment switching and key rotation safer.
+
+Use the convention for your framework.
+
+Vite / React:
+
+```ts
+const tonderPublicConfig = {
+  api_key: import.meta.env.VITE_TONDER_PUBLIC_API_KEY,
+  environment: import.meta.env.VITE_TONDER_ENVIRONMENT as
+    | 'sandbox'
+    | 'stage'
+    | 'production',
+};
+```
+
+Next.js Client Components:
+
+```ts
+const tonderPublicConfig = {
+  api_key: process.env.NEXT_PUBLIC_TONDER_PUBLIC_API_KEY,
+  environment: process.env.NEXT_PUBLIC_TONDER_ENVIRONMENT as
+    | 'sandbox'
+    | 'stage'
+    | 'production',
+};
+```
+
+Angular:
+
+```ts
+import { environment } from '../environments/environment';
+
+const tonderPublicConfig = {
+  api_key: environment.tonderPublicApiKey,
+  environment: environment.tonderEnvironment,
+};
+```
+
+Plain HTML / server-rendered config:
+
+```ts
+const tonderPublicConfig = window.__TONDER_CONFIG__;
+```
+
+`currency` is checkout/business data. Keep it in your checkout state or merchant configuration; it does not need to be an environment variable unless your app already manages it that way.
+
 ## Backend secure token endpoint
 
 `session.secure_token` is required whenever the SDK needs to create, read, update, or remove stored card records for a customer. In practice, this means:
@@ -106,8 +155,8 @@ const { secure_token } = await fetch('/api/tonder/secure-token', {
 }).then((response) => response.json());
 
 const tonder = createTonder({
-  api_key: 'pk_test_...',
-  environment: 'sandbox',
+  api_key: tonderPublicConfig.api_key,
+  environment: tonderPublicConfig.environment,
   session: {
     customer: { email: 'ada@example.com' },
     secure_token,
@@ -146,8 +195,8 @@ Cap each SDK mount container so the secure iframe does not visually grow before 
 import { createTonder } from '@tonder.io/web-sdk';
 
 const tonder = createTonder({
-  api_key: 'pk_test_...',
-  environment: 'sandbox',
+  api_key: tonderPublicConfig.api_key,
+  environment: tonderPublicConfig.environment,
   session: {
     customer: {
       email: 'ada@example.com',
@@ -189,8 +238,8 @@ if (transaction.status === 'Success' || transaction.status === 'Authorized') {
 
 ```ts
 const tonder = createTonder({
-  api_key: 'pk_test_...',
-  environment: 'sandbox',
+  api_key: tonderPublicConfig.api_key,
+  environment: tonderPublicConfig.environment,
   presentation_mode: 'embedded',
   session: {
     customer: {
@@ -199,7 +248,7 @@ const tonder = createTonder({
       last_name: 'Lovelace',
       phone: '+525500000000',
     },
-    secure_token: 'server_minted_secure_token',
+    secure_token: await getSecureTokenFromYourBackend(),
   },
   events: {
     presentation: {
@@ -343,8 +392,8 @@ Style values use CSS-in-JS keys supported by the secure card-field renderer, for
 
 ```ts
 const tonder = createTonder({
-  api_key: 'pk_test_...',
-  environment: 'sandbox',
+  api_key: tonderPublicConfig.api_key,
+  environment: tonderPublicConfig.environment,
   customization: {
     card_fields: {
       labels: {
@@ -406,8 +455,8 @@ Call `await tonder.init()` before mounting card fields, creating payments, or us
 ```ts
 // Return page / read-only reconciliation.
 const tonder = createTonder({
-  api_key: 'pk_test_...',
-  environment: 'sandbox',
+  api_key: tonderPublicConfig.api_key,
+  environment: tonderPublicConfig.environment,
 });
 
 const transaction = await tonder.getTransaction('txn_123');
@@ -437,8 +486,8 @@ When a payment requires a hosted step, the SDK uses `presentation_mode`:
 
 ```ts
 const tonder = createTonder({
-  api_key: 'pk_test_...',
-  environment: 'sandbox',
+  api_key: tonderPublicConfig.api_key,
+  environment: tonderPublicConfig.environment,
   presentation_mode: 'embedded',
   events: {
     presentation: {
@@ -475,8 +524,8 @@ Saved-card operations require both `session.customer` and `session.secure_token`
 
 ```ts
 const tonder = createTonder({
-  api_key: 'pk_test_...',
-  environment: 'sandbox',
+  api_key: tonderPublicConfig.api_key,
+  environment: tonderPublicConfig.environment,
   session: {
     customer: { email: 'ada@example.com' },
     secure_token: await getSecureTokenFromYourBackend(),
