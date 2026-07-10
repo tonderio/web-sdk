@@ -10,6 +10,7 @@ Browser TypeScript SDK for accepting payments with Tonder. It provides secure ca
 
 - [Install](#install)
 - [Before you start](#before-you-start)
+- [Backend secure token endpoint](#backend-secure-token-endpoint)
 - [Quick start: card payment](#quick-start-card-payment)
 - [Configuration](#configuration)
 - [Core concepts](#core-concepts)
@@ -54,6 +55,65 @@ You need:
 - A modern browser: Chrome, Safari, Firefox, or Edge.
 - A server endpoint that can create a short-lived `secure_token` when using saved cards/Card on File.
 - A webhook endpoint for reliable payment fulfillment.
+
+## Backend secure token endpoint
+
+`session.secure_token` is required whenever the SDK needs to create, read, update, or remove stored card records for a customer. In practice, this means:
+
+| SDK operation                                         | Needs `session.secure_token`?                      | Why                                                                                      |
+| ----------------------------------------------------- | -------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| `tonder.enrollCard()`                                 | Yes                                                | Saves a new card for the customer.                                                       |
+| `tonder.getCustomerCards()`                           | Yes                                                | Lists the customer's saved cards.                                                        |
+| `tonder.removeCustomerCard(card_id)`                  | Yes                                                | Removes a saved card.                                                                    |
+| `tonder.pay()` with `{ type: 'saved_card', card_id }` | Yes                                                | Looks up the saved card and may update it with CVV/Card-on-File data before charging it. |
+| `tonder.pay()` with `{ type: 'card' }`                | Only when Card on File is enabled for the business | Saves the new card and creates/updates the Card-on-File subscription before charging it. |
+
+Create the token on your backend using your Tonder **secret API key**, then return only the short-lived `access` token to the browser. Never expose your secret key in frontend code.
+
+```ts
+// Example backend route. Keep TONDER_SECRET_API_KEY only on your server.
+app.post('/api/tonder/secure-token', async (_req, res) => {
+  const response = await fetch('https://stage.tonder.io/api/secure-token/', {
+    method: 'POST',
+    headers: {
+      Authorization: `Token ${process.env.TONDER_SECRET_API_KEY}`,
+      'Content-Type': 'application/json',
+    },
+  });
+
+  if (!response.ok) {
+    res.status(502).json({ error: 'Unable to create Tonder secure token' });
+    return;
+  }
+
+  const { access } = await response.json();
+  res.json({ secure_token: access });
+});
+```
+
+Use the matching Tonder API host for your environment:
+
+| SDK environment      | Backend token URL                           |
+| -------------------- | ------------------------------------------- |
+| `sandbox` or `stage` | `https://stage.tonder.io/api/secure-token/` |
+| `production`         | `https://app.tonder.io/api/secure-token/`   |
+
+Then pass the value returned by your backend to the SDK:
+
+```ts
+const { secure_token } = await fetch('/api/tonder/secure-token', {
+  method: 'POST',
+}).then((response) => response.json());
+
+const tonder = createTonder({
+  api_key: 'pk_test_...',
+  environment: 'sandbox',
+  session: {
+    customer: { email: 'ada@example.com' },
+    secure_token,
+  },
+});
+```
 
 ## Quick start: card payment
 
@@ -169,16 +229,16 @@ const tonder = createTonder({
 });
 ```
 
-| Field                          | Required                              | Description                                                                            |
-| ------------------------------ | ------------------------------------- | -------------------------------------------------------------------------------------- |
-| `api_key`                      | Yes                                   | Public Tonder key for browser integrations.                                            |
-| `environment`                  | Yes                                   | `'sandbox'`, `'stage'`, or `'production'`.                                             |
-| `session.customer`             | For `pay()` and saved-card operations | Customer identity. Omit for read-only return pages that only call `getTransaction()`.  |
-| `session.secure_token`         | For saved-card operations             | Short-lived token minted by your backend.                                              |
-| `presentation_mode`            | No                                    | `'redirect'` by default, or `'embedded'` for SDK-owned modal presentation.             |
-| `events.presentation.on_open`  | No                                    | Called when an embedded hosted-payment view opens.                                     |
-| `events.presentation.on_close` | No                                    | Called when the shopper closes a closable embedded hosted-payment view.                |
-| `customization.card_fields`    | No                                    | Labels, placeholders, styles, and validation-message overrides for secure card fields. |
+| Field                          | Required                               | Description                                                                            |
+| ------------------------------ | -------------------------------------- | -------------------------------------------------------------------------------------- |
+| `api_key`                      | Yes                                    | Public Tonder key for browser integrations.                                            |
+| `environment`                  | Yes                                    | `'sandbox'`, `'stage'`, or `'production'`.                                             |
+| `session.customer`             | For `pay()` and saved-card operations  | Customer identity. Omit for read-only return pages that only call `getTransaction()`.  |
+| `session.secure_token`         | For saved-card/Card-on-File operations | Short-lived token minted by your backend using your Tonder secret API key.             |
+| `presentation_mode`            | No                                     | `'redirect'` by default, or `'embedded'` for SDK-owned modal presentation.             |
+| `events.presentation.on_open`  | No                                     | Called when an embedded hosted-payment view opens.                                     |
+| `events.presentation.on_close` | No                                     | Called when the shopper closes a closable embedded hosted-payment view.                |
+| `customization.card_fields`    | No                                     | Labels, placeholders, styles, and validation-message overrides for secure card fields. |
 
 ### Card field customization
 
@@ -353,6 +413,19 @@ const tonder = createTonder({
 const transaction = await tonder.getTransaction('txn_123');
 ```
 
+### Card on File (COF)
+
+Card on File (COF) lets a business save a shopper's card and charge it later through a processor-backed subscription/authorization. Ask the Tonder team whether COF is enabled for your business before building saved-card flows.
+
+When COF is enabled, saved cards may include `subscription_id`. Cards with `subscription_id` can be charged directly as saved cards. Cards without `subscription_id` require CVV collection so the SDK can save/update the card and create the subscription before processing the payment. In both saved-card cases, `pay({ payment_method: { type: 'saved_card' } })` still needs `session.secure_token` because the SDK must read the customer's saved-card record before deciding which path to use.
+
+Because those operations create, list, update, or remove stored card records, they require both:
+
+- `session.customer`
+- `session.secure_token`
+
+For new-card payments, `session.secure_token` is only required when the SDK must perform Card-on-File setup as part of the payment flow. Plain one-time new-card payments do not require it.
+
 ### Presentation mode
 
 When a payment requires a hosted step, the SDK uses `presentation_mode`:
@@ -398,7 +471,7 @@ const transaction = await tonder.pay({
 
 ### Saved card
 
-Saved-card operations require both `session.customer` and `session.secure_token`.
+Saved-card operations require both `session.customer` and `session.secure_token`. If you are not sure whether your business has Card on File enabled, confirm it with the Tonder team before launching this flow.
 
 ```ts
 const tonder = createTonder({
@@ -437,6 +510,8 @@ const transaction = await tonder.pay({
 ```
 
 ### Save a new card
+
+Card enrollment requires both `session.customer` and `session.secure_token`. Mint the secure token on your backend before creating the SDK instance.
 
 ```ts
 const card_fields = tonder.create('card_fields');
@@ -703,6 +778,8 @@ Promise<void>;
 
 Creates a payment.
 
+For `{ type: 'saved_card', card_id }`, `tonder.pay()` requires `session.secure_token` because the SDK must look up the saved card and may collect CVV/update Card-on-File data before charging it. For `{ type: 'card' }`, `session.secure_token` is only required when Card on File is enabled for the business and the SDK must save the new card before processing the payment.
+
 #### Request
 
 ```ts
@@ -879,7 +956,7 @@ Same `RawTransaction` shape as `pay()`.
 
 ### `tonder.enrollCard()`
 
-Saves the currently mounted new card for `session.customer`.
+Saves the currently mounted new card for `session.customer`. Requires `session.secure_token` because card enrollment is a card CRUD/Card-on-File operation.
 
 #### Request
 
@@ -1188,15 +1265,15 @@ Use `error.code` for branching. Do not parse `error.message`; messages are for d
 
 ### Customer and saved-card credentials
 
-| Code                       | When it happens                                                      | Returned by                                                                                                                                | How to fix                                                                                        |
-| -------------------------- | -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------- |
-| `MISSING_CUSTOMER`         | `session.customer` is required but was not provided.                 | `tonder.pay()`, `tonder.enrollCard()`, `tonder.getCustomerCards()`, `tonder.removeCustomerCard()`                                          | Create the SDK with `session.customer.email` and optional customer fields.                        |
-| `SECURE_TOKEN_REQUIRED`    | Saved-card operations require `session.secure_token`.                | `tonder.enrollCard()`, `tonder.getCustomerCards()`, `tonder.removeCustomerCard()`, `tonder.pay()` with `payment_method.type: 'saved_card'` | Mint a secure token on your backend and pass it in `createTonder({ session: { secure_token } })`. |
-| `CUSTOMER_OPERATION_ERROR` | Customer registration/fetch failed.                                  | Saved-card operations and card enrollment                                                                                                  | Verify customer data and backend availability.                                                    |
-| `FETCH_CARDS_ERROR`        | Saved cards could not be retrieved.                                  | `tonder.getCustomerCards()`, saved-card `pay()` lookup                                                                                     | Verify `session.customer`, `session.secure_token`, and customer ownership.                        |
-| `SAVE_CARD_ERROR`          | A new or existing card could not be saved.                           | `tonder.enrollCard()`, `tonder.pay()` when a card must be saved for COF                                                                    | Ask the shopper to verify card data or retry; inspect `error.details` for backend context.        |
-| `REMOVE_CARD_ERROR`        | A saved card could not be removed.                                   | `tonder.removeCustomerCard()`, rollback after failed auto-enrollment                                                                       | Retry the removal or reconcile from your backend/admin tools.                                     |
-| `CARD_ON_FILE_DECLINED`    | Card-on-File enrollment/authorization was declined by the processor. | `tonder.enrollCard()`, COF/saved-card `tonder.pay()` flows                                                                                 | Ask for another card or corrected card details.                                                   |
+| Code                       | When it happens                                                      | Returned by                                                                                                                                                                                 | How to fix                                                                                        |
+| -------------------------- | -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `MISSING_CUSTOMER`         | `session.customer` is required but was not provided.                 | `tonder.pay()`, `tonder.enrollCard()`, `tonder.getCustomerCards()`, `tonder.removeCustomerCard()`                                                                                           | Create the SDK with `session.customer.email` and optional customer fields.                        |
+| `SECURE_TOKEN_REQUIRED`    | Saved-card/Card-on-File operations require `session.secure_token`.   | `tonder.enrollCard()`, `tonder.getCustomerCards()`, `tonder.removeCustomerCard()`, `tonder.pay()` with `{ type: 'saved_card' }`, `tonder.pay()` with `{ type: 'card' }` when COF is enabled | Mint a secure token on your backend and pass it in `createTonder({ session: { secure_token } })`. |
+| `CUSTOMER_OPERATION_ERROR` | Customer registration/fetch failed.                                  | Saved-card operations and card enrollment                                                                                                                                                   | Verify customer data and backend availability.                                                    |
+| `FETCH_CARDS_ERROR`        | Saved cards could not be retrieved.                                  | `tonder.getCustomerCards()`, saved-card `pay()` lookup                                                                                                                                      | Verify `session.customer`, `session.secure_token`, and customer ownership.                        |
+| `SAVE_CARD_ERROR`          | A new or existing card could not be saved.                           | `tonder.enrollCard()`, `tonder.pay()` when a card must be saved for COF                                                                                                                     | Ask the shopper to verify card data or retry; inspect `error.details` for backend context.        |
+| `REMOVE_CARD_ERROR`        | A saved card could not be removed.                                   | `tonder.removeCustomerCard()`, rollback after failed auto-enrollment                                                                                                                        | Retry the removal or reconcile from your backend/admin tools.                                     |
+| `CARD_ON_FILE_DECLINED`    | Card-on-File enrollment/authorization was declined by the processor. | `tonder.enrollCard()`, COF/saved-card `tonder.pay()` flows                                                                                                                                  | Ask for another card or corrected card details.                                                   |
 
 ### Payment request and processing
 
