@@ -496,8 +496,11 @@ export class Tonder {
    *
    * - `'card'`      collects the secure tokens (failures normalized to
    *                 `PAYMENT_PROCESS_ERROR`) and builds the CARD body.
-   * - `'saved_card'` validates `card_id` (`INVALID_PAYMENT_REQUEST` if missing)
-   *                 and builds the token-only CARD body — NO `collect()`.
+   * - `'saved_card'` validates `card_id` (`INVALID_PAYMENT_REQUEST` if missing),
+   *                 looks up the saved-card record, and only skips CVV collection
+   *                 when COF is active and the card already has `subscription_id`.
+   *                 Otherwise it collects the saved-card CVV context and saves/
+   *                 updates the card before building the token-only CARD body.
    * - other         → `INVALID_PAYMENT_REQUEST_CARD_PM`.
    */
   private async resolvePaymentMethod(
