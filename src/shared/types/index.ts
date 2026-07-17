@@ -176,6 +176,18 @@ export interface EnrollResult {
  * Customer data is not passed per payment. Configure the shopper once through
  * `config.session.customer` when creating the SDK instance.
  */
+/**
+ * Optional customer billing address. Every field is optional — provide as much as you
+ * have. Some payment methods may require it; when in doubt, send the full address.
+ */
+export interface BillingAddress {
+  street?: string;
+  street2?: string;
+  state?: string;
+  country?: string;
+  zip_code?: string;
+}
+
 export interface PayInput {
   /** Charge amount. Must be greater than 0. */
   amount: number;
@@ -192,6 +204,8 @@ export interface PayInput {
   payment_method: PaymentMethod;
   /** Arbitrary merchant metadata echoed back on the transaction. */
   metadata?: Record<string, unknown>;
+  /** Optional customer billing address. */
+  billing_address?: BillingAddress;
   /** Required merchant-side business reference for reconciliation, dashboards, exports, and webhooks. */
   client_reference: string;
   /**
