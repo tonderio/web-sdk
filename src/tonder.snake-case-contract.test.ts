@@ -114,6 +114,97 @@ describe('public snake_case contract', () => {
     });
   });
 
+  it('forwards an optional billing_address on pay input to the /process body', async () => {
+    const processSpy = vi.fn(() => Promise.resolve(transaction()));
+    const http: HttpPort = {
+      request: vi.fn(<T>(options: Parameters<HttpPort['request']>[0]) => {
+        if (options.path === '/api/v1/process/')
+          return processSpy(options) as Promise<T>;
+        return Promise.resolve(business() as unknown as T);
+      }),
+    };
+    const tonder = _createTonderWithDeps({
+      config: {
+        api_key: 'pk_test_123',
+        environment: 'sandbox',
+        session: {
+          secure_token: 'secure_abc',
+          customer: {
+            email: 'ada@example.com',
+            first_name: 'Ada',
+            last_name: 'Lovelace',
+          },
+        },
+      },
+      http,
+      tokenizer: tokenizer(),
+    });
+
+    await tonder.init();
+    await tonder.pay({
+      amount: 100,
+      return_url: 'https://merchant.example/return/tx_1',
+      client_reference: 'order_123',
+      payment_method: { type: 'card' },
+      billing_address: {
+        street: 'AV 1',
+        street2: '',
+        state: 'CDMX',
+        country: 'MX',
+        zip_code: '06000',
+      },
+    });
+
+    expect(processSpy.mock.calls[0][0].body).toMatchObject({
+      billing_address: {
+        street: 'AV 1',
+        street2: '',
+        state: 'CDMX',
+        country: 'MX',
+        zip_code: '06000',
+      },
+    });
+  });
+
+  it('omits billing_address from the /process body when the merchant does not pass it', async () => {
+    const processSpy = vi.fn(() => Promise.resolve(transaction()));
+    const http: HttpPort = {
+      request: vi.fn(<T>(options: Parameters<HttpPort['request']>[0]) => {
+        if (options.path === '/api/v1/process/')
+          return processSpy(options) as Promise<T>;
+        return Promise.resolve(business() as unknown as T);
+      }),
+    };
+    const tonder = _createTonderWithDeps({
+      config: {
+        api_key: 'pk_test_123',
+        environment: 'sandbox',
+        session: {
+          secure_token: 'secure_abc',
+          customer: {
+            email: 'ada@example.com',
+            first_name: 'Ada',
+            last_name: 'Lovelace',
+          },
+        },
+      },
+      http,
+      tokenizer: tokenizer(),
+    });
+
+    await tonder.init();
+    await tonder.pay({
+      amount: 100,
+      return_url: 'https://merchant.example/return/tx_1',
+      client_reference: 'order_123',
+      payment_method: { type: 'card' },
+    });
+
+    expect(processSpy.mock.calls[0][0].body).not.toHaveProperty(
+      'billing_address',
+    );
+  });
+
   it('returns payment-method discovery objects with payment_method and no payment_method alias', async () => {
     const http: HttpPort = {
       request: vi.fn(<T>() =>
