@@ -841,6 +841,13 @@ interface PayInput {
     | { type: 'saved_card'; card_id: string }
     | { type: string; config?: Record<string, unknown> };
   metadata?: Record<string, unknown>;
+  billing_address?: {
+    street?: string;
+    street2?: string;
+    state?: string;
+    country?: string;
+    zip_code?: string;
+  };
   client_reference: string;
   idempotency_key?: string;
 }
@@ -855,6 +862,7 @@ interface PayInput {
 | `client_reference` | Yes      | Merchant order/reference shown in dashboards, exports, webhooks, transaction records, and transaction reports. |
 | `idempotency_key`  | No       | Recommended stable key for the same payment attempt so retries do not create duplicate charges.                |
 | `metadata`         | No       | Non-sensitive merchant context for reconciliation and reports.                                                 |
+| `billing_address`  | No       | Customer billing address. All sub-fields (`street`, `street2`, `state`, `country`, `zip_code`) are optional.   |
 
 Examples:
 

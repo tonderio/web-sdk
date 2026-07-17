@@ -961,6 +961,9 @@ export class Tonder {
     if (input.metadata !== undefined) {
       body.metadata = input.metadata;
     }
+    if (input.billing_address !== undefined) {
+      body.billing_address = input.billing_address;
+    }
     return body;
   }
 

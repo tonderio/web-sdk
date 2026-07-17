@@ -7,7 +7,11 @@ import type { BackendTransactionResponse } from '../../models/transaction.model'
 import type { HttpPort } from '../../ports/http.port';
 import { AppError } from '../../shared/errors/AppError';
 import { ErrorKeyEnum } from '../../shared/errors/ErrorKeyEnum';
-import type { PaymentMethodBank, PaymentMethodInfo } from '../../shared/types';
+import type {
+  BillingAddress,
+  PaymentMethodBank,
+  PaymentMethodInfo,
+} from '../../shared/types';
 import { getPaymentMethodCatalogDetails } from '../../shared/payment-method-catalog';
 
 /** SDK transport shape for one payment-method record. */
@@ -95,6 +99,7 @@ export interface ProcessPaymentBody {
   payment_method: CardPaymentMethod | SavedCardPaymentMethod | ApmPaymentMethod;
   client_reference: string;
   metadata?: Record<string, unknown>;
+  billing_address?: BillingAddress;
 }
 
 /**
