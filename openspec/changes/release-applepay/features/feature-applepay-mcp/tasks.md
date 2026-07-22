@@ -1,6 +1,6 @@
 # Tasks: applepay-mcp — MCP web-sdk: guía de migración Direct API → web-sdk + Apple Pay
 
-**Owner:** Bel  
+**Owner:** Dave  
 **Repo:** `web-sdk` (`/Users/leningomez/Documents/dev/tndr/front/web-sdk`)  
 **Nota:** Esta feature es pura documentación y configuración de herramientas del MCP. No requiere código de producción.
 
@@ -129,7 +129,7 @@
 
 ---
 
-## Notas para Bel
+## Notas para Dave
 
 - El contexto técnico completo de Apple Pay (por qué solo SDK, qué hace cada endpoint, campos Kushki) está en `openspec/changes/release-applepay/proposal.md` del repo `usrv-kushki-acq`. Lenin puede compartirte ese documento.
 - Los endpoints exactos de zplit-back para Apple Pay están en `features/feature-applepay-zplitback/proposal.md`.

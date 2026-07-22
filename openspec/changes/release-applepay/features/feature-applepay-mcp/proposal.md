@@ -9,7 +9,7 @@ Release Intent: Habilitar Apple Pay en el SDK de Tonder (InlineCheckout/LiteInli
 
 Documentar el primer caso de uso del MCP de web-sdk: guiar a merchants que actualmente usan la integración Direct API (custom frontend + endpoints de zplit-back) a migrar a web-sdk (InlineCheckout/LiteInlineCheckout) como prerequisito para obtener Apple Pay. Este es el flujo crítico de adopción — los merchants que quieran Apple Pay **deben** migrar al SDK primero, ya que Apple Pay no es viable en el producto Direct API.
 
-El MCP de Bel usa esta migración como caso de uso ancla para demostrar el valor del SDK y reducir la fricción de migración.
+El MCP de Dave usa esta migración como caso de uso ancla para demostrar el valor del SDK y reducir la fricción de migración.
 
 ## Scope
 
@@ -27,7 +27,7 @@ El MCP de Bel usa esta migración como caso de uso ancla para demostrar el valor
 - Análisis de riesgos de la migración: merchants con formulario custom muy personalizado
 
 ### Out of Scope
-- Implementación del MCP en sí — eso es trabajo de Bel
+- Implementación del MCP en sí — eso es trabajo de Dave
 - Documentar nuevas features más allá de Apple Pay para la versión inicial del MCP
 - Migración de merchants que usen Google Pay u otros métodos alternativos (no implementados aún)
 
@@ -78,7 +78,7 @@ El MCP debe poder:
 |------|--------|-------------|
 | `docs/migration/direct-api-to-sdk.md` (web-sdk) | New | Guía de migración técnica completa |
 | `docs/migration/apple-pay-setup.md` (web-sdk) | New | Checklist de configuración Apple Pay para merchants |
-| MCP tool definitions (Bel) | New | Herramientas del MCP para guiar la migración |
+| MCP tool definitions (Dave) | New | Herramientas del MCP para guiar la migración |
 | `examples/apple-pay/` (web-sdk) | New | Ejemplos de código para InlineCheckout con Apple Pay |
 
 ## Risks
@@ -97,7 +97,7 @@ Esta feature es pura documentación y herramientas del MCP — no hay código de
 
 - **feature-applepay-sdk**: el web-sdk debe estar implementado antes de que la guía de migración pueda ser testeada end-to-end
 - **feature-applepay-zplitback**: los endpoints Apple Pay deben existir para que el flujo migrado funcione
-- **Bel (implementación del MCP)**: este documento + guías de migración son el input para construir el MCP
+- **Dave (implementación del MCP)**: este documento + guías de migración son el input para construir el MCP
 
 ## Success Criteria
 
@@ -106,7 +106,7 @@ Esta feature es pura documentación y herramientas del MCP — no hay código de
 - [ ] El MCP puede guiar a un merchant en la migración completa sin intervención manual de Tonder
 - [ ] Existe al menos un merchant real que migró usando el MCP como guía (criterio de beta)
 
-## Nota para Bel
+## Nota para Dave
 
 Este es el **primer caso de uso** del MCP de web-sdk. El foco es:
 1. Un merchant que hoy usa Direct API quiere Apple Pay
