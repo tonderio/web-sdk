@@ -97,16 +97,18 @@
 
 ---
 
-## Phase 5: Integración en InlineCheckout
+## Phase 5: Integración en LiteInlineCheckout (PRIORIDAD — arrancar por aquí)
 
-- [ ] 5.1 [RED] En `InlineCheckout.test.ts`, agregar tests:
+> Por definición de negocio, LiteInlineCheckout es la prioridad. Se implementa y valida completo antes de tocar InlineCheckout.
+
+- [ ] 5.1 [RED] En `LiteInlineCheckout.test.ts`, agregar tests:
   - Test: Apple Pay button NO aparece cuando `apple_pay.enabled: false` (mock del businessData)
   - Test: Apple Pay button NO aparece cuando `canUseApplePay()` retorna `false` (mock adapter)
   - Test: Apple Pay button aparece cuando ambas condiciones son `true`
   - Test: click en Apple Pay button inicia `startApplePaySession()` (spy)
   - Test: flujo de tarjeta regular no se ve afectado (no regresión)
 
-- [ ] 5.2 [GREEN] Modificar `InlineCheckout.ts`:
+- [ ] 5.2 [GREEN] Modificar `LiteInlineCheckout.ts`:
   - En el método de inicialización, después de `fetchBusiness()`, evaluar si mostrar botón Apple Pay
   - Inyectar `ApplePaySessionAdapter` (o mock en tests) via parámetro de configuración o DI del SDK
   - Conectar botón Apple Pay con `startApplePaySession()`
@@ -114,11 +116,11 @@
 
 ---
 
-## Phase 6: Integración en LiteInlineCheckout
+## Phase 6: Integración en InlineCheckout (después de Lite)
 
-- [ ] 6.1 [RED] En `LiteInlineCheckout.test.ts`, agregar los mismos tests de Apple Pay que en InlineCheckout (mismos escenarios)
+- [ ] 6.1 [RED] En `InlineCheckout.test.ts`, agregar los mismos tests de Apple Pay que en LiteInlineCheckout (mismos escenarios)
 
-- [ ] 6.2 [GREEN] Modificar `LiteInlineCheckout.ts` con la misma integración que InlineCheckout
+- [ ] 6.2 [GREEN] Modificar `InlineCheckout.ts` con la misma integración que LiteInlineCheckout
 
 ---
 

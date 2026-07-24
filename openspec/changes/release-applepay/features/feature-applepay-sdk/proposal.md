@@ -19,8 +19,8 @@ Integrar Apple Pay como método de pago en los componentes `InlineCheckout` y `L
   - `onpaymentauthorized`: extraer `payment.token` (PKPaymentToken) y enviarlo al checkout
   - `oncancel`, `onerror`: manejar cancelación y errores del usuario
 - Botón Apple Pay renderizado con el componente oficial de Apple (`-webkit-appearance: -apple-pay-button`)
-- Integración en `InlineCheckout` (flujo completo con formulario)
-- Integración en `LiteInlineCheckout` (flujo mínimo, configuración vía config)
+- Integración en `LiteInlineCheckout` (flujo mínimo, configuración vía config) — **PRIORIDAD por definición de negocio: arrancar por aquí**
+- Integración en `InlineCheckout` (flujo completo con formulario) — después de completar y validar Lite
 - `applePayToken` enviado al checkout de Tonder junto con `payment_method: "apple_pay"`
 - Tests unitarios y de integración (Vitest) — mock de `ApplePaySession` para entornos no-Safari
 
