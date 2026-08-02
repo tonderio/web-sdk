@@ -53,7 +53,7 @@ El sistema MUST inicializar `ApplePaySession` con `version: 3` y un `ApplePayPay
 - `total.label`: nombre del merchant (del businessData)
 - `total.amount`: monto total como string
 
-El sistema MUST obtener el `merchantIdentifier` desde `GET /api/v1/payments/apple-pay/merchant-id/` antes de iniciar la sesión.
+El sistema MUST leer el `merchantIdentifier` desde `businessData.apple_pay.merchant_identifier` — ya viene en la respuesta del endpoint de business info (`GET /api/v1/payments/business/{apiKey}`). No existe un endpoint separado de merchant-id.
 
 El sistema MUST NOT iniciar la sesión Apple Pay fuera de un evento de interacción del usuario (click handler del botón).
 
@@ -68,7 +68,7 @@ El sistema MUST NOT iniciar la sesión Apple Pay fuera de un evento de interacci
 
 ### Requirement: Validación de merchant (onvalidatemerchant)
 
-El sistema MUST manejar el evento `session.onvalidatemerchant` llamando a `POST /api/v1/payments/apple-pay/validate-merchant/` con `{ validationURL, domainName: window.location.hostname }`.
+El sistema MUST manejar el evento `session.onvalidatemerchant` llamando a `POST /api/v1/payments/apple-pay/validate-merchant/` **sin body** (el backend extrae `domainName` del header `Origin` que el browser envía automáticamente; `validationURL` es ignorada por seguridad — el backend la tiene hardcodeada).
 
 El sistema MUST llamar `session.completeMerchantValidation(merchantSession)` con la respuesta del backend.
 
@@ -94,7 +94,7 @@ El sistema MUST llamar `session.abort()` y notificar al usuario si la validació
 
 El sistema MUST manejar el evento `session.onpaymentauthorized` extrayendo `event.payment.token` (PKPaymentToken).
 
-El sistema MUST enviar el checkout a Tonder con `payment_method: 'apple_pay'` y `apple_pay_token: event.payment.token`.
+El sistema MUST enviar el cargo a `POST /api/v1/process/` con `payment_method: { type: 'APPLE_PAY', token: event.payment.token }` — el `PKPaymentToken` como objeto en `payment_method.token`, no serializado como string ni en un campo separado.
 
 El sistema MUST llamar `session.completePayment(ApplePaySession.STATUS_SUCCESS)` cuando el cargo sea exitoso.
 

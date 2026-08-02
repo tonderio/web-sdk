@@ -66,14 +66,18 @@
 
 - [ ] 3.1 Crear `src/api/applePayApi.ts`:
   ```typescript
-  export async function getMerchantId(baseUrl: string, apiKey: string): Promise<string>
-  export async function validateMerchant(baseUrl: string, apiKey: string, validationURL: string, domainName: string): Promise<unknown>
+  // validate-merchant: sin body — el browser envía Origin header automáticamente,
+  // el backend extrae domainName de ahí y la validationURL está hardcodeada server-side.
+  export async function validateMerchant(baseUrl: string, apiKey: string): Promise<unknown>
+
+  // merchantIdentifier NO tiene endpoint propio — viene en businessData.apple_pay.merchant_identifier
+  // (GET /api/v1/payments/business/{apiKey} que ya se llama al iniciar el checkout)
   ```
   Usar `fetch()` para llamar a los endpoints de zplit-back. Manejar errores HTTP con throws descriptivos.
 
 - [ ] 3.2 [RED] Crear `src/services/applePayService.test.ts`:
-  - Test: `submitApplePayCheckout()` llama al checkout con `payment_method: 'apple_pay'` y `apple_pay_token`
-  - Test: falla si `apple_pay_token` es undefined
+  - Test: `submitApplePayCheckout()` llama a `POST /api/v1/process/` con `payment_method: { type: 'APPLE_PAY', token: pkPaymentToken }` — el PKPaymentToken como objeto, **no** como string, **no** en campo separado
+  - Test: falla si `pkPaymentToken` no es objeto o no tiene `paymentData`
   - Mock de `fetch` en todos los tests
 
 - [ ] 3.3 [GREEN] Crear `src/services/applePayService.ts`:

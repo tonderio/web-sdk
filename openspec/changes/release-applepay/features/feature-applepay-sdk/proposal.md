@@ -71,15 +71,24 @@ session.begin();
 ```
 
 ### Envío al checkout
+
+El cargo Apple Pay usa **el mismo endpoint que tarjeta** (`POST /api/v1/process/`) con el mismo esquema. El `PKPaymentToken` va como objeto en `payment_method.token` — **no** serializado como string, **no** en un campo separado.
+
 ```typescript
-// En lugar de { card }, enviar:
+// POST /api/v1/process/ — mismo endpoint que para tarjeta
 const body = {
-  payment_method: 'apple_pay',
-  apple_pay_token: JSON.stringify(pkPaymentToken), // serializado como string
+  operation_type: 'payment',
   amount: total,
   currency: currency,
+  customer: { name: customerName, email: customerEmail },
+  payment_method: {
+    type: 'APPLE_PAY',
+    token: pkPaymentToken, // PKPaymentToken como objeto (event.payment.token tal cual)
+  },
 };
 ```
+
+El backend valida que `payment_method.token` sea un objeto con `paymentData`. El `PKPaymentToken` nunca se serializa a string — se envía como objeto JSON directamente.
 
 ### Arquitectura web-sdk
 Siguiendo el patrón Ports & Adapters del web-sdk:
