@@ -76,7 +76,7 @@
   Usar `fetch()` para llamar a los endpoints de zplit-back. Manejar errores HTTP con throws descriptivos.
 
 - [ ] 3.2 [RED] Crear `src/services/applePayService.test.ts`:
-  - Test: `submitApplePayCheckout()` llama a `POST /api/v1/process/` con `payment_method: { type: 'APPLE_PAY', token: pkPaymentToken }` — el PKPaymentToken como objeto, **no** como string, **no** en campo separado
+  - Test: `submitApplePayCheckout()` llama a `POST /api/v1/process/` con `payment_method: { type: 'apple_pay', token: pkPaymentToken }` — el PKPaymentToken como objeto, **no** como string, **no** en campo separado
   - Test: falla si `pkPaymentToken` no es objeto o no tiene `paymentData`
   - Mock de `fetch` en todos los tests
 

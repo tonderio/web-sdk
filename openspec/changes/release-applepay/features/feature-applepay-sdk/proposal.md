@@ -82,7 +82,7 @@ const body = {
   currency: currency,
   customer: { name: customerName, email: customerEmail },
   payment_method: {
-    type: 'APPLE_PAY',
+    type: 'apple_pay',
     token: pkPaymentToken, // PKPaymentToken como objeto (event.payment.token tal cual)
   },
 };

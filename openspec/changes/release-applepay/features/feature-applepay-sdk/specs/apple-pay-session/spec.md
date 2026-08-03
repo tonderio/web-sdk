@@ -94,7 +94,7 @@ El sistema MUST llamar `session.abort()` y notificar al usuario si la validació
 
 El sistema MUST manejar el evento `session.onpaymentauthorized` extrayendo `event.payment.token` (PKPaymentToken).
 
-El sistema MUST enviar el cargo a `POST /api/v1/process/` con `payment_method: { type: 'APPLE_PAY', token: event.payment.token }` — el `PKPaymentToken` como objeto en `payment_method.token`, no serializado como string ni en un campo separado.
+El sistema MUST enviar el cargo a `POST /api/v1/process/` con `payment_method: { type: 'apple_pay', token: event.payment.token }` — el `PKPaymentToken` como objeto en `payment_method.token`, no serializado como string ni en un campo separado.
 
 El sistema MUST llamar `session.completePayment(ApplePaySession.STATUS_SUCCESS)` cuando el cargo sea exitoso.
 
