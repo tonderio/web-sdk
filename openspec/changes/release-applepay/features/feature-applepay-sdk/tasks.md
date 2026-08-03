@@ -62,7 +62,7 @@
 
 ---
 
-## Phase 3: API y servicio Apple Pay
+## Phase 3: API, servicio Apple Pay y cambio en tonder.ts
 
 - [ ] 3.1 Crear `src/api/applePayApi.ts`:
   ```typescript
@@ -73,17 +73,26 @@
   // merchantIdentifier NO tiene endpoint propio — viene en businessData.apple_pay.merchant_identifier
   // (GET /api/v1/payments/business/{apiKey} que ya se llama al iniciar el checkout)
   ```
-  Usar `fetch()` para llamar a los endpoints de zplit-back. Manejar errores HTTP con throws descriptivos.
 
-- [ ] 3.2 [RED] Crear `src/services/applePayService.test.ts`:
-  - Test: `submitApplePayCheckout()` llama a `POST /api/v1/process/` con `payment_method: { type: 'apple_pay', token: pkPaymentToken }` — el PKPaymentToken como objeto, **no** como string, **no** en campo separado
-  - Test: falla si `pkPaymentToken` no es objeto o no tiene `paymentData`
-  - Mock de `fetch` en todos los tests
+- [ ] 3.2 [RED] Agregar tests para el path `apple_pay` en `tonder.pay.test.ts`:
+  - Test: `tonder.pay({ payment_method: { type: 'apple_pay', token: pkPaymentToken } })` invoca `processPayment` con el payload correcto
+  - Test: el resultado se maneja de forma síncrona (igual que `card`) — **no** va a `handleApmResult`
+  - Test: falla si `pkPaymentToken` no tiene `paymentData` (validación del backend)
 
-- [ ] 3.3 [GREEN] Crear `src/services/applePayService.ts`:
-  - `startApplePaySession(config, checkoutData, adapter)`: función principal que orquesta el flujo
+- [ ] 3.3 [GREEN] Modificar `src/tonder.ts` — **apple_pay es síncrono, no APM**:
+  - En el guard de la línea ~338, agregar `apple_pay` al path síncrono:
+    ```typescript
+    if (inputType !== 'card' && inputType !== 'saved_card' && inputType !== 'apple_pay') {
+      return await this.handleApmResult(tx);
+    }
+    ```
+  - En `resolvePaymentMethod()`: agregar caso `apple_pay` que pasa el token tal cual sin tokenizar ni pasar por Skyflow
+  - **No crear un nuevo cliente HTTP** — `buildProcessBody()` y `processPayment()` ya construyen y envían el request a `POST /api/v1/process/`
+
+- [ ] 3.4 Crear `src/services/applePayService.ts`:
+  - `startApplePaySession(tonder, adapter)`: orquesta el flujo de `ApplePaySession`
   - `onvalidatemerchant` handler: llama `validateMerchant()` → `session.completeMerchantValidation()`
-  - `onpaymentauthorized` handler: extrae `event.payment.token` → llama checkout → `session.completePayment(STATUS_SUCCESS/FAILURE)`
+  - `onpaymentauthorized` handler: extrae `event.payment.token` → llama `tonder.pay({ payment_method: { type: 'apple_pay', token } })` → `session.completePayment(STATUS_SUCCESS/FAILURE)`
   - `oncancel` handler: emite evento de cancelación al caller
 
 ---

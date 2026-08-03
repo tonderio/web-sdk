@@ -72,23 +72,30 @@ session.begin();
 
 ### Envío al checkout
 
-El cargo Apple Pay usa **el mismo endpoint que tarjeta** (`POST /api/v1/process/`) con el mismo esquema. El `PKPaymentToken` va como objeto en `payment_method.token` — **no** serializado como string, **no** en un campo separado.
+El cargo Apple Pay reutiliza la infraestructura existente del SDK — **no se crea un nuevo cliente HTTP**. El método `tonder.pay()` ya llama a `POST /api/v1/process/` con `buildProcessBody()`. Apple Pay solo necesita pasar `payment_method: { type: 'apple_pay', token: pkPaymentToken }`.
 
 ```typescript
-// POST /api/v1/process/ — mismo endpoint que para tarjeta
-const body = {
-  operation_type: 'payment',
-  amount: total,
-  currency: currency,
-  customer: { name: customerName, email: customerEmail },
+// En onpaymentauthorized — llamar pay() con el token de Apple Pay
+await tonder.pay({
+  amount: checkoutAmount,
+  currency: checkoutCurrency,
   payment_method: {
     type: 'apple_pay',
-    token: pkPaymentToken, // PKPaymentToken como objeto (event.payment.token tal cual)
+    token: event.payment.token, // PKPaymentToken como objeto — nunca serializado
   },
-};
+});
 ```
 
-El backend valida que `payment_method.token` sea un objeto con `paymentData`. El `PKPaymentToken` nunca se serializa a string — se envía como objeto JSON directamente.
+**Cambio requerido en `tonder.ts`**: `apple_pay` debe agregarse al path síncrono (igual que `card`). Actualmente cualquier type distinto a `card`/`saved_card` cae en `handleApmResult` (async). Apple Pay es síncrono:
+
+```typescript
+// tonder.ts línea ~338 — agregar 'apple_pay' al guard
+if (inputType !== 'card' && inputType !== 'saved_card' && inputType !== 'apple_pay') {
+  return await this.handleApmResult(tx);
+}
+```
+
+`customer`, `operation_type`, `amount` y `currency` ya los construye `buildProcessBody()` desde la sesión configurada — Dave no necesita pasarlos explícitamente.
 
 ### Arquitectura web-sdk
 Siguiendo el patrón Ports & Adapters del web-sdk:
