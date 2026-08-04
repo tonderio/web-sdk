@@ -45,6 +45,32 @@ const PAYMENT_METHOD_CATALOG: Record<string, { label: string; logo: string }> =
     },
   };
 
+/** Backend namespace prefix for every Apple Pay catalog entry. */
+const APPLE_PAY_METHOD_PREFIX = 'apple_pay_';
+
+/**
+ * True when a catalog `payment_method` is an Apple Pay entry
+ * (`apple_pay_debit_card`, `apple_pay_credit_card`, and any future variant).
+ *
+ * Lives here, with the other facts about method codes, rather than in the Apple
+ * Pay strategy: the projection in `models/payment-method.model.ts` needs it, and
+ * that module must not import from `core/`.
+ *
+ * Prefix rather than an allow-list on purpose: the two failure directions are
+ * not symmetric. Missing a new variant LEAKS a dead-end method to merchants —
+ * the exact bug the `getPaymentMethods()` filter exists to prevent — while
+ * over-matching would require the backend to ship a non-Apple-Pay method inside
+ * the `apple_pay_` namespace.
+ *
+ * A bare `apple_pay` entry (no trailing underscore) deliberately does NOT
+ * match; no such entry exists in the backend contract, and widening the prefix
+ * would start matching an unrelated `apple_payment_*` namespace. If one ever
+ * ships, extend the predicate here — it is the single place the rule lives.
+ */
+export function isApplePayCatalogMethod(paymentMethod: string): boolean {
+  return paymentMethod.startsWith(APPLE_PAY_METHOD_PREFIX);
+}
+
 export function getPaymentMethodCatalogDetails(method: string): {
   label: string;
   logo: string;

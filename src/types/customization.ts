@@ -115,7 +115,42 @@ export interface CardFieldsCustomization {
   error_messages?: CardFieldErrorMessages;
 }
 
+/**
+ * Customization for the Apple Pay button surface.
+ *
+ * Set it at `customization.apple_pay_button`; `mount()` forwards it to the
+ * renderer unchanged, and the adapter emits the documented defaults for every
+ * field left absent.
+ *
+ * There is deliberately no image, icon, or logo option: Apple's HIG forbids
+ * custom Apple Pay artwork, which is why the button is rendered via
+ * `-webkit-appearance: -apple-pay-button` rather than an `<img>`. Every field
+ * maps to a WebKit CSS property Apple actually exposes; Apple's own tokens keep
+ * Apple's casing (`check-out`, `white-outline`) — that is Apple's contract.
+ */
+export interface ApplePayButtonCustomization {
+  /** Maps to -apple-pay-button-type. Defaults to 'buy'. */
+  type?:
+    | 'buy'
+    | 'plain'
+    | 'donate'
+    | 'book'
+    | 'subscribe'
+    | 'check-out'
+    | 'set-up'
+    | 'continue'
+    | 'order';
+  /** Maps to -apple-pay-button-style. Defaults to 'black'. */
+  style?: 'black' | 'white' | 'white-outline';
+  /** Maps to -apple-pay-button-locale, e.g. 'es-MX'. */
+  locale?: string;
+  height?: string;
+  border_radius?: string;
+}
+
 /** Root customization object accepted by `createTonder`. */
 export interface TonderCustomization {
   card_fields?: CardFieldsCustomization;
+  /** Styles for the SDK-rendered Apple Pay button. */
+  apple_pay_button?: ApplePayButtonCustomization;
 }

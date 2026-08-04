@@ -38,4 +38,15 @@ export default tseslint.config(
       },
     },
   },
+  {
+    // Build-pipeline scripts run in Node.
+    files: ['scripts/**/*.mjs'],
+    languageOptions: {
+      globals: {
+        process: 'readonly',
+        console: 'readonly',
+        URL: 'readonly',
+      },
+    },
+  },
 );

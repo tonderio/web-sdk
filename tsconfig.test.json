@@ -1,0 +1,25 @@
+{
+  // Separate project so unit tests are type-checked WITHOUT entering the
+  // package build. The root config excludes `**/*.test.ts` because they must
+  // never be emitted into `dist`, and that exclusion silently meant nothing
+  // type-checked them at all: a test could reference a field that no longer
+  // exists and still pass, because Vitest transpiles without checking types.
+  //
+  // Same shape as `e2e/tsconfig.json`, deliberately: one mechanism for
+  // "type-check sources that are not part of the shipped build", not two.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    // Relaxed for tests ONLY; `src/` keeps it on. In production code an
+    // unchecked index is a latent crash. In a test, `spy.mock.calls[0][1]` IS
+    // the assertion: if the call never happened the test fails immediately with
+    // a clear error, so the flag buys ceremony rather than safety and would
+    // bury the findings that matter under a few hundred non-null assertions.
+    "noUncheckedIndexedAccess": false,
+    "declaration": false,
+    "declarationMap": false,
+    "sourceMap": false
+  },
+  "include": ["src/**/*.test.ts", "src/**/*.ts", "src/test-support/**/*.ts"],
+  "exclude": ["node_modules", "dist"]
+}

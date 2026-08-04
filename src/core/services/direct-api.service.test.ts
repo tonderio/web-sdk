@@ -1,7 +1,8 @@
 import { describe, it, expect, vi } from 'vitest';
 import { DirectApiService } from './direct-api.service';
-import type { HttpPort } from '../../ports/http.port';
+import { asHttpPort } from '../../test-support/http.mock';
 import type { ProcessPaymentBody } from './direct-api.service';
+import { buildApplePayPaymentMethod } from '../strategies/apple-pay.strategy';
 import type { BackendTransactionResponse } from '../../models/transaction.model';
 import { AppError } from '../../shared/errors/AppError';
 import { ErrorKeyEnum } from '../../shared/errors/ErrorKeyEnum';
@@ -35,10 +36,6 @@ function makeResponse(): BackendTransactionResponse {
     amount: '150.00',
     currency: 'MXN',
   };
-}
-
-function mockHttp(impl: HttpPort['request']): HttpPort {
-  return { request: vi.fn(impl) };
 }
 
 describe('DirectApiService.processPayment', () => {
@@ -87,7 +84,9 @@ describe('DirectApiService.processPayment', () => {
       errorCode: ErrorKeyEnum.REQUEST_FAILED,
       status_code: 502,
     });
-    const service = new DirectApiService(mockHttp(() => Promise.reject(inner)));
+    const service = new DirectApiService(
+      asHttpPort(() => Promise.reject(inner)),
+    );
 
     const err = await service
       .processPayment(makeBody(), REQUEST_ID)
@@ -99,7 +98,7 @@ describe('DirectApiService.processPayment', () => {
 
   it('re-wraps an unknown rejection as AppError(PAYMENT_PROCESS_ERROR)', async () => {
     const service = new DirectApiService(
-      mockHttp(() => Promise.reject(new Error('boom'))),
+      asHttpPort(() => Promise.reject(new Error('boom'))),
     );
 
     await expect(
@@ -143,7 +142,9 @@ describe('DirectApiService.getTransaction', () => {
       errorCode: ErrorKeyEnum.REQUEST_FAILED,
       status_code: 404,
     });
-    const service = new DirectApiService(mockHttp(() => Promise.reject(inner)));
+    const service = new DirectApiService(
+      asHttpPort(() => Promise.reject(inner)),
+    );
 
     const err = await service.getTransaction('tx_404').catch((e) => e);
 
@@ -154,7 +155,7 @@ describe('DirectApiService.getTransaction', () => {
 
   it('re-wraps an unknown rejection as AppError(FETCH_TRANSACTION_ERROR)', async () => {
     const service = new DirectApiService(
-      mockHttp(() => Promise.reject(new Error('boom'))),
+      asHttpPort(() => Promise.reject(new Error('boom'))),
     );
 
     await expect(service.getTransaction('tx_1')).rejects.toMatchObject({
@@ -163,26 +164,32 @@ describe('DirectApiService.getTransaction', () => {
   });
 });
 
-describe('DirectApiService.getPaymentMethods', () => {
-  function backendPaymentMethods(): unknown {
+describe('DirectApiService.getPaymentMethodCatalog', () => {
+  // Transport only. The service moves bytes and normalizes the paginated
+  // envelope; projection into the merchant-facing shape, and the Apple Pay
+  // filter, live in `models/payment-method.model.ts` and are tested there.
+  function rawCatalog(): unknown {
     return [
       {
         pk: 7,
         payment_method: 'oxxopay',
-        acquirer: 'safetypay',
-        status: 'active',
         priority: 10,
         category: 'cash',
-        unavailable_countries: ['US'],
+      },
+      {
+        pk: 9,
+        payment_method: 'apple_pay_debit_card',
+        priority: 1,
+        category: 'wallet',
       },
     ];
   }
 
-  it('GETs /api/v1/payment_methods?status=active with the Token auth header and maps snake→camel', async () => {
-    const spy = vi.fn().mockResolvedValue(backendPaymentMethods());
+  it('GETs /api/v1/payment_methods?status=active and returns the RAW, unmapped, unfiltered array', async () => {
+    const spy = vi.fn().mockResolvedValue(rawCatalog());
     const service = new DirectApiService({ request: spy });
 
-    const result = await service.getPaymentMethods();
+    const result = await service.getPaymentMethodCatalog();
 
     expect(spy).toHaveBeenCalledTimes(1);
     expect(spy).toHaveBeenCalledWith(
@@ -191,45 +198,30 @@ describe('DirectApiService.getPaymentMethods', () => {
         path: '/api/v1/payment_methods?status=active',
       }),
     );
-    expect(result).toEqual([
-      {
-        id: 7,
-        payment_method: 'oxxopay',
-        label: 'Oxxo Pay',
-        logo: 'https://d35a75syrgujp0.cloudfront.net/payment_methods/oxxopay.png',
-        category: 'cash',
-      },
-    ]);
+    expect(result).toEqual(rawCatalog());
   });
 
-  it('accepts paginated payment-method responses from Direct API', async () => {
-    const spy = vi.fn().mockResolvedValue({
-      count: 1,
-      next: null,
-      previous: null,
-      results: backendPaymentMethods(),
+  it('flattens a paginated envelope into the raw array', async () => {
+    const service = new DirectApiService({
+      request: vi.fn().mockResolvedValue({
+        count: 2,
+        next: null,
+        previous: null,
+        results: rawCatalog(),
+      }),
     });
-    const service = new DirectApiService({ request: spy });
 
-    const result = await service.getPaymentMethods();
-
-    expect(result).toEqual([
-      {
-        id: 7,
-        payment_method: 'oxxopay',
-        label: 'Oxxo Pay',
-        logo: 'https://d35a75syrgujp0.cloudfront.net/payment_methods/oxxopay.png',
-        category: 'cash',
-      },
-    ]);
+    await expect(service.getPaymentMethodCatalog()).resolves.toEqual(
+      rawCatalog(),
+    );
   });
 
   it('re-wraps a transport failure as AppError(FETCH_PAYMENT_METHODS_ERROR)', async () => {
     const service = new DirectApiService(
-      mockHttp(() => Promise.reject(new Error('boom'))),
+      asHttpPort(() => Promise.reject(new Error('boom'))),
     );
 
-    const err = await service.getPaymentMethods().catch((e) => e);
+    const err = await service.getPaymentMethodCatalog().catch((e) => e);
 
     expect(err).toBeInstanceOf(AppError);
     expect(err.code).toBe(ErrorKeyEnum.FETCH_PAYMENT_METHODS_ERROR);
@@ -314,12 +306,43 @@ describe('DirectApiService.getPaymentMethodBanks', () => {
 
   it('re-wraps a transport failure as AppError(FETCH_PAYMENT_METHOD_BANKS_ERROR)', async () => {
     const service = new DirectApiService(
-      mockHttp(() => Promise.reject(new Error('boom'))),
+      asHttpPort(() => Promise.reject(new Error('boom'))),
     );
 
     const err = await service.getPaymentMethodBanks(API_KEY).catch((e) => e);
 
     expect(err).toBeInstanceOf(AppError);
     expect(err.code).toBe(ErrorKeyEnum.FETCH_PAYMENT_METHOD_BANKS_ERROR);
+  });
+});
+
+describe('ProcessPaymentBody.payment_method — Apple Pay member', () => {
+  it('forwards an APPLE_PAY payment-method block verbatim, token by reference', async () => {
+    // `ApplePayPaymentMethod` is an EXPLICIT member of the union rather than
+    // relying on `ApmPaymentMethod`'s structural `type: string` accident, which
+    // would make the union a lie. That membership is enforced by
+    // `npm run typecheck` at the compiled call site in the checkout service —
+    // `*.test.ts` is excluded from `tsconfig.json`, so no assertion in this
+    // file can prove it. What this test does prove is that the block, and the
+    // opaque token inside it, reach `/process` untouched.
+    const token = buildApplePayPaymentMethod({
+      paymentData: { signature: 'sig' },
+    } as unknown as Parameters<typeof buildApplePayPaymentMethod>[0]);
+    const spy = vi.fn().mockResolvedValue(makeResponse());
+    const service = new DirectApiService({ request: spy });
+    const body: ProcessPaymentBody = {
+      ...makeBody(),
+      payment_method: token,
+    };
+
+    await service.processPayment(body);
+
+    const sent = spy.mock.calls[0][0].body as ProcessPaymentBody;
+    expect(sent).toBe(body);
+    expect(sent.payment_method).toBe(token);
+    expect(sent.payment_method).toEqual({
+      type: 'APPLE_PAY',
+      token: { paymentData: { signature: 'sig' } },
+    });
   });
 });

@@ -3,7 +3,8 @@ import { AppError } from '../../shared/errors/AppError';
 import { ErrorKeyEnum } from '../../shared/errors/ErrorKeyEnum';
 
 /**
- * `data.event` values the embedded payflow page emits to signal completion.
+ * `data.event` values the embedded hosted checkout page emits to signal
+ * completion.
  * Anything else (e.g. `checkout.redirected`) is NOT a final signal and is
  * ignored — the SDK keeps waiting for a completion signal.
  */

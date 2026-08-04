@@ -2,10 +2,12 @@ import { describe, it, expect, vi } from 'vitest';
 import { _createTonderWithDeps } from './tonder';
 import { AppError } from './shared/errors/AppError';
 import { ErrorKeyEnum } from './shared/errors/ErrorKeyEnum';
-import type { HttpPort } from './ports/http.port';
+import type { HttpPort, HttpRequestOptions } from './ports/http.port';
+import { asHttpPort, type RequestImpl } from './test-support/http.mock';
 import type { AcquirerPort } from './ports/acquirer.port';
 import type { TokenizerPort } from './ports/tokenizer.port';
 import type { CheckoutMessengerPort } from './ports/checkout-messenger.port';
+import type { ThreeDsHostPort } from './ports/threeds-host.port';
 import type { BusinessConfig } from './models/business.model';
 import type { BackendTransactionResponse } from './models/transaction.model';
 import type { PayInput, TonderConfig } from './shared/types';
@@ -13,7 +15,6 @@ import type { PayInput, TonderConfig } from './shared/types';
 const CONFIG: TonderConfig = {
   api_key: 'pk_test_123',
   environment: 'sandbox',
-  return_url: 'https://merchant.example/return',
   session: {
     customer: {
       email: 'ada@example.com',
@@ -27,7 +28,6 @@ const CONFIG: TonderConfig = {
 const CONFIG_NO_CUSTOMER: TonderConfig = {
   api_key: 'pk_test_123',
   environment: 'sandbox',
-  return_url: 'https://merchant.example/return',
 };
 
 const COF_CONFIG: TonderConfig = {
@@ -93,33 +93,28 @@ function mockAcquirer(): {
 }
 
 function mockCofHttp(
-  processImpl: HttpPort['request'] = () => Promise.resolve(backendResponse()),
+  processImpl: RequestImpl = () => Promise.resolve(backendResponse()),
   options: {
     savedCardSubscriptionId?: string | null;
     cofActive?: boolean;
     transactionResponse?: BackendTransactionResponse;
   } = {},
-): {
-  http: HttpPort;
-  processSpy: ReturnType<typeof vi.fn>;
-  customerSpy: ReturnType<typeof vi.fn>;
-  cardSaveSpy: ReturnType<typeof vi.fn>;
-  cardRemoveSpy: ReturnType<typeof vi.fn>;
-  cardListSpy: ReturnType<typeof vi.fn>;
-} {
+) {
   const processSpy = vi.fn(processImpl);
-  const customerSpy = vi.fn(() =>
+  const customerSpy = vi.fn((_request: HttpRequestOptions) =>
     Promise.resolve({ id: 42, auth_token: 'cust_tok_1' }),
   );
-  const cardSaveSpy = vi.fn(() =>
+  const cardSaveSpy = vi.fn((_request: HttpRequestOptions) =>
     Promise.resolve({
       skyflow_id: 'sky_1',
       user_id: 'u_1',
       card_bin: '411111',
     }),
   );
-  const cardRemoveSpy = vi.fn(() => Promise.resolve({ message: 'removed' }));
-  const cardListSpy = vi.fn(() =>
+  const cardRemoveSpy = vi.fn((_request: HttpRequestOptions) =>
+    Promise.resolve({ message: 'removed' }),
+  );
+  const cardListSpy = vi.fn((_request: HttpRequestOptions) =>
     Promise.resolve({
       user_id: 'u_1',
       cards: [
@@ -136,47 +131,43 @@ function mockCofHttp(
       ],
     }),
   );
-  const http: HttpPort = {
-    request: vi.fn(<T>(request: Parameters<HttpPort['request']>[0]) => {
-      if (request.path === '/api/v1/process/') {
-        return processSpy(request) as Promise<T>;
-      }
-      if (request.path === '/api/v1/customer/') {
-        return customerSpy(request) as Promise<T>;
-      }
-      if (
-        request.method === 'GET' &&
-        request.path === '/api/v1/business/7/cards/'
-      ) {
-        return cardListSpy(request) as Promise<T>;
-      }
-      if (
-        request.method === 'POST' &&
-        request.path === '/api/v1/business/7/cards/'
-      ) {
-        return cardSaveSpy(request) as Promise<T>;
-      }
-      if (
-        request.method === 'DELETE' &&
-        request.path === '/api/v1/business/7/cards/sky_1/'
-      ) {
-        return cardRemoveSpy(request) as Promise<T>;
-      }
-      if (request.path.startsWith('/api/v1/transactions/')) {
-        return Promise.resolve(
-          (options.transactionResponse ?? backendResponse()) as unknown as T,
-        );
-      }
-      const business =
-        options.cofActive === false
-          ? {
-              ...makeBusinessConfig(),
-              business: { ...makeBusinessConfig().business, pk: 7 },
-            }
-          : makeCofBusinessConfig();
-      return Promise.resolve(business as unknown as T);
-    }),
-  };
+  const http: HttpPort = asHttpPort((request: HttpRequestOptions) => {
+    if (request.path === '/api/v1/process/') {
+      return processSpy(request);
+    }
+    if (request.path === '/api/v1/customer/') {
+      return customerSpy(request);
+    }
+    if (
+      request.method === 'GET' &&
+      request.path === '/api/v1/business/7/cards/'
+    ) {
+      return cardListSpy(request);
+    }
+    if (
+      request.method === 'POST' &&
+      request.path === '/api/v1/business/7/cards/'
+    ) {
+      return cardSaveSpy(request);
+    }
+    if (
+      request.method === 'DELETE' &&
+      request.path === '/api/v1/business/7/cards/sky_1/'
+    ) {
+      return cardRemoveSpy(request);
+    }
+    if (request.path.startsWith('/api/v1/transactions/')) {
+      return Promise.resolve(options.transactionResponse ?? backendResponse());
+    }
+    const business =
+      options.cofActive === false
+        ? {
+            ...makeBusinessConfig(),
+            business: { ...makeBusinessConfig().business, pk: 7 },
+          }
+        : makeCofBusinessConfig();
+    return Promise.resolve(business);
+  });
   return {
     http,
     processSpy,
@@ -196,6 +187,13 @@ async function readyCofTonder(
   const tonder = _createTonderWithDeps({ config, http, tokenizer, acquirer });
   await tonder.init();
   return tonder;
+}
+
+/** `HttpRequestOptions.body` is `unknown`; tests inspect it as a plain record. */
+function sentBody(spy: {
+  mock: { calls: [HttpRequestOptions][] };
+}): Record<string, unknown> {
+  return spy.mock.calls[0][0].body as Record<string, unknown>;
 }
 
 function payInput(overrides: Partial<PayInput> = {}): PayInput {
@@ -222,19 +220,14 @@ function mockTokenizer(
 }
 
 /** HTTP mock: business GET first (init), then the /process POST routed by path. */
-function mockHttp(processImpl: HttpPort['request']): {
-  http: HttpPort;
-  processSpy: ReturnType<typeof vi.fn>;
-} {
+function mockHttp(processImpl: RequestImpl) {
   const processSpy = vi.fn(processImpl);
-  const http: HttpPort = {
-    request: vi.fn(<T>(options: Parameters<HttpPort['request']>[0]) => {
-      if (options.path === '/api/v1/process/') {
-        return processSpy(options) as Promise<T>;
-      }
-      return Promise.resolve(makeBusinessConfig() as unknown as T);
-    }),
-  };
+  const http: HttpPort = asHttpPort((options: HttpRequestOptions) => {
+    if (options.path === '/api/v1/process/') {
+      return processSpy(options);
+    }
+    return Promise.resolve(makeBusinessConfig());
+  });
   return { http, processSpy };
 }
 
@@ -247,17 +240,15 @@ function mock3dsHttp(
   processResponse: BackendTransactionResponse,
   transactionResponse: BackendTransactionResponse,
 ): HttpPort {
-  return {
-    request: vi.fn(<T>(options: Parameters<HttpPort['request']>[0]) => {
-      if (options.path === '/api/v1/process/') {
-        return Promise.resolve(processResponse as unknown as T);
-      }
-      if (options.path.startsWith('/api/v1/transactions/')) {
-        return Promise.resolve(transactionResponse as unknown as T);
-      }
-      return Promise.resolve(makeBusinessConfig() as unknown as T);
-    }),
-  };
+  return asHttpPort((options: HttpRequestOptions) => {
+    if (options.path === '/api/v1/process/') {
+      return Promise.resolve(processResponse);
+    }
+    if (options.path.startsWith('/api/v1/transactions/')) {
+      return Promise.resolve(transactionResponse);
+    }
+    return Promise.resolve(makeBusinessConfig());
+  });
 }
 
 function completingMessenger(): CheckoutMessengerPort {
@@ -266,12 +257,16 @@ function completingMessenger(): CheckoutMessengerPort {
   };
 }
 
-function mockHost(): {
+function mockHost(): ThreeDsHostPort & {
   redirect: ReturnType<typeof vi.fn>;
   open: ReturnType<typeof vi.fn>;
   close: ReturnType<typeof vi.fn>;
 } {
-  return { redirect: vi.fn(), open: vi.fn(), close: vi.fn() };
+  return {
+    redirect: vi.fn<ThreeDsHostPort['redirect']>(),
+    open: vi.fn<ThreeDsHostPort['open']>(),
+    close: vi.fn<ThreeDsHostPort['close']>(),
+  };
 }
 
 function requiresActionResponse(): BackendTransactionResponse {
@@ -391,7 +386,7 @@ describe('Tonder.pay — /process customer name derivation', () => {
 
     await tonder.pay(payInput());
 
-    return processSpy.mock.calls[0][0].body.customer as Record<string, unknown>;
+    return sentBody(processSpy).customer as Record<string, unknown>;
   }
 
   it('firstName + lastName → name is "First Last", only { name, email } sent (no phone)', async () => {
@@ -480,7 +475,7 @@ describe('Tonder.pay — happy paths', () => {
   });
 
   it('sends idempotency_key as a business-scoped X-Request-Id without putting it in the body', async () => {
-    const { http, processSpy, cardSaveSpy } = mockCofHttp(
+    const { http, processSpy } = mockCofHttp(
       () => Promise.resolve(backendResponse()),
       { cofActive: false },
     );
@@ -676,7 +671,7 @@ describe('Tonder.pay — COF-active new-card auto enrollment', () => {
 
     expect(tokenizer.collect).toHaveBeenCalledTimes(1);
     expect(subscriptionSpy).not.toHaveBeenCalled();
-    expect(processSpy.mock.calls[0][0].body.payment_method).toEqual({
+    expect(sentBody(processSpy).payment_method).toEqual({
       type: 'CARD',
       card_number: 'tok_cn',
       cvv: 'tok_cvv',
@@ -704,7 +699,7 @@ describe('Tonder.pay — COF-active new-card auto enrollment', () => {
     expect(tokenizer.collect).not.toHaveBeenCalled();
     expect(cardSaveSpy).not.toHaveBeenCalled();
     expect(subscriptionSpy).not.toHaveBeenCalled();
-    expect(processSpy.mock.calls[0][0].body.payment_method).toEqual({
+    expect(sentBody(processSpy).payment_method).toEqual({
       type: 'CARD',
       token: 'card_abc',
     });
@@ -748,7 +743,7 @@ describe('Tonder.pay — COF-active new-card auto enrollment', () => {
         body: { skyflow_id: 'card_abc', subscription_id: 'sub_123' },
       }),
     );
-    expect(processSpy.mock.calls[0][0].body.payment_method).toEqual({
+    expect(sentBody(processSpy).payment_method).toEqual({
       type: 'CARD',
       token: 'card_abc',
     });
@@ -805,42 +800,40 @@ describe('Tonder.pay — COF-active new-card auto enrollment', () => {
       return Promise.resolve(backendResponse());
     });
     const requestSpy = http.request as ReturnType<typeof vi.fn>;
-    requestSpy.mockImplementation(
-      <T>(options: Parameters<HttpPort['request']>[0]) => {
-        if (options.path === '/api/v1/process/') {
-          return Promise.resolve(requiresActionResponse() as unknown as T);
-        }
-        if (options.path === '/api/v1/customer/') {
-          return Promise.resolve({
-            id: 42,
-            auth_token: 'cust_tok_1',
-          } as unknown as T);
-        }
-        if (
-          options.method === 'POST' &&
-          options.path === '/api/v1/business/7/cards/'
-        ) {
-          return Promise.resolve({
-            skyflow_id: 'sky_1',
-            user_id: 'u_1',
-            card_bin: '411111',
-          } as unknown as T);
-        }
-        if (
-          options.method === 'DELETE' &&
-          options.path === '/api/v1/business/7/cards/sky_1/'
-        ) {
-          cardRemoveSpy(options);
-          return Promise.resolve({ message: 'removed' } as unknown as T);
-        }
-        if (options.path.startsWith('/api/v1/transactions/')) {
-          return Promise.reject(
-            new AppError({ errorCode: ErrorKeyEnum.FETCH_TRANSACTION_ERROR }),
-          );
-        }
-        return Promise.resolve(makeCofBusinessConfig() as unknown as T);
-      },
-    );
+    requestSpy.mockImplementation((options: HttpRequestOptions) => {
+      if (options.path === '/api/v1/process/') {
+        return Promise.resolve(requiresActionResponse());
+      }
+      if (options.path === '/api/v1/customer/') {
+        return Promise.resolve({
+          id: 42,
+          auth_token: 'cust_tok_1',
+        });
+      }
+      if (
+        options.method === 'POST' &&
+        options.path === '/api/v1/business/7/cards/'
+      ) {
+        return Promise.resolve({
+          skyflow_id: 'sky_1',
+          user_id: 'u_1',
+          card_bin: '411111',
+        });
+      }
+      if (
+        options.method === 'DELETE' &&
+        options.path === '/api/v1/business/7/cards/sky_1/'
+      ) {
+        cardRemoveSpy(options);
+        return Promise.resolve({ message: 'removed' });
+      }
+      if (options.path.startsWith('/api/v1/transactions/')) {
+        return Promise.reject(
+          new AppError({ errorCode: ErrorKeyEnum.FETCH_TRANSACTION_ERROR }),
+        );
+      }
+      return Promise.resolve(makeCofBusinessConfig());
+    });
     const tonder = _createTonderWithDeps({
       config: { ...COF_CONFIG, presentation_mode: 'embedded' },
       http,
@@ -1299,19 +1292,17 @@ describe('Tonder.pay — 3DS presentation (presentationMode)', () => {
 
     it('post-signal reconcile failure → close then rethrow AppError', async () => {
       const host = mockHost();
-      const http: HttpPort = {
-        request: vi.fn(<T>(options: Parameters<HttpPort['request']>[0]) => {
-          if (options.path === '/api/v1/process/') {
-            return Promise.resolve(requiresActionResponse() as unknown as T);
-          }
-          if (options.path.startsWith('/api/v1/transactions/')) {
-            return Promise.reject(
-              new AppError({ errorCode: ErrorKeyEnum.FETCH_TRANSACTION_ERROR }),
-            );
-          }
-          return Promise.resolve(makeBusinessConfig() as unknown as T);
-        }),
-      };
+      const http: HttpPort = asHttpPort((options: HttpRequestOptions) => {
+        if (options.path === '/api/v1/process/') {
+          return Promise.resolve(requiresActionResponse());
+        }
+        if (options.path.startsWith('/api/v1/transactions/')) {
+          return Promise.reject(
+            new AppError({ errorCode: ErrorKeyEnum.FETCH_TRANSACTION_ERROR }),
+          );
+        }
+        return Promise.resolve(makeBusinessConfig());
+      });
       const tonder = await readyTonderWithHost(EMBEDDED_CONFIG, http, host);
 
       const err = await tonder.pay(payInput()).catch((e) => e);
@@ -1363,19 +1354,17 @@ function mockApmHttp(processResponse: BackendTransactionResponse): {
 } {
   const pollSpy = vi.fn();
   const processSpy = vi.fn();
-  const http: HttpPort = {
-    request: vi.fn(<T>(options: Parameters<HttpPort['request']>[0]) => {
-      if (options.path === '/api/v1/process/') {
-        processSpy(options);
-        return Promise.resolve(processResponse as unknown as T);
-      }
-      if (options.path.startsWith('/api/v1/transactions/')) {
-        pollSpy();
-        return Promise.resolve(processResponse as unknown as T);
-      }
-      return Promise.resolve(makeBusinessConfig() as unknown as T);
-    }),
-  };
+  const http: HttpPort = asHttpPort((options: HttpRequestOptions) => {
+    if (options.path === '/api/v1/process/') {
+      processSpy(options);
+      return Promise.resolve(processResponse);
+    }
+    if (options.path.startsWith('/api/v1/transactions/')) {
+      pollSpy();
+      return Promise.resolve(processResponse);
+    }
+    return Promise.resolve(makeBusinessConfig());
+  });
   return { http, pollSpy, processSpy };
 }
 

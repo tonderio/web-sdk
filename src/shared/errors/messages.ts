@@ -16,7 +16,7 @@ export const MESSAGES_EN: Record<string, string> = {
   [ErrorKeyEnum.INVALID_PAYMENT_REQUEST_CARD_PM]:
     'Payment method must be a card for this operation.',
   [ErrorKeyEnum.INVALID_COMPONENT_TYPE]:
-    "Unknown component type. Supported: 'card_fields'.",
+    "Unknown component type. Supported: 'card_fields', 'apple_pay_button'.",
   [ErrorKeyEnum.ENVIRONMENT_REQUIRED]: 'Environment required.',
   [ErrorKeyEnum.FETCH_CARDS_ERROR]: 'Error retrieving cards.',
   [ErrorKeyEnum.FETCH_TRANSACTION_ERROR]: 'Error retrieving the transaction.',
@@ -60,5 +60,15 @@ export const MESSAGES_EN: Record<string, string> = {
   [ErrorKeyEnum.POLL_TIMEOUT_ERROR]: 'Transaction polling timed out.',
   [ErrorKeyEnum.THREEDS_REDIRECTION_ERROR]:
     'An error occurred during the 3DS redirection.',
+  [ErrorKeyEnum.APPLE_PAY_SESSION_ERROR]:
+    'Could not start the Apple Pay session. The page must be served over HTTPS from a domain registered with Apple, and the amount must be greater than zero.',
+  [ErrorKeyEnum.APPLE_PAY_CONTAINER_NOT_FOUND]:
+    'Apple Pay button container not found. Add an element matching `container_id` to the page before mounting.',
+  [ErrorKeyEnum.APPLE_PAY_NOT_ENABLED]:
+    'Apple Pay is not enabled for this business. Contact Tonder to enable it.',
+  [ErrorKeyEnum.APPLE_PAY_UNSUPPORTED_BROWSER]:
+    'This browser cannot run Apple Pay. Call `isApplePayAvailable()` before rendering the button.',
+  [ErrorKeyEnum.APPLE_PAY_VALIDATION_ERROR]:
+    'Could not obtain an Apple Pay merchant session from Apple. The most likely cause is a domain that is not registered with Apple for this merchant; it can also be a temporary failure reaching the validation service.',
   [ErrorKeyEnum.UNKNOWN_ERROR]: 'An unexpected error occurred.',
 };

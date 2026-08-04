@@ -1,5 +1,7 @@
 import type { TonderMode } from '../config/env';
 import type { TonderCustomization } from '../../types/customization';
+import type { RawTransaction } from '../../models/transaction.model';
+import type { AppError } from '../errors/AppError';
 
 export type { RawTransaction } from '../../models/transaction.model';
 export type { Card } from '../../models/card.model';
@@ -38,12 +40,74 @@ export interface PresentationEvents {
 }
 
 /**
+ * Payment lifecycle callbacks for every payment the SDK completes — `pay()`
+ * included, not only the flows where the SDK owns the charge trigger.
+ * Instance-level, a sibling of {@link PresentationEvents}.
+ *
+ * Read at FIRE time, so a callback assigned onto the config after
+ * `createTonder()` is still honored. Fully OPT-IN: leaving these undefined
+ * changes nothing about `pay()`'s promise contract — it still resolves with the
+ * transaction and still throws its `AppError`.
+ *
+ * A callback that throws is isolated: the throw is reported through
+ * `console.warn` and cannot change the payment result, reject a `pay()` that
+ * succeeded, or escape into an Apple Pay session handler.
+ *
+ * `on_cancel` is separate from `on_error` because cancelling is a shopper
+ * decision, not a failure, and carries no error code. It never fires from
+ * `pay()` — cancellation has no meaning there.
+ */
+export interface PaymentEvents {
+  /**
+   * Called when the charge reaches a FINAL state, whatever that state is, with
+   * the same transaction `pay()` returns.
+   *
+   * Completed is not the same as paid. A decline completes: the attempt reached
+   * a final answer and the answer was no. Read `transaction.status` to decide
+   * what your flow does next — treating every call here as a paid order ships a
+   * checkout that fulfills declines.
+   */
+  on_completed?(transaction: RawTransaction): void;
+  /**
+   * Called when the charge fails operationally — no transaction exists, so
+   * there is nothing to reconcile against. A decline does NOT arrive here; it
+   * arrives at {@link PaymentEvents.on_completed}.
+   */
+  on_error?(error: AppError): void;
+  /** Called when the shopper dismisses the payment sheet. */
+  on_cancel?(): void;
+}
+
+/**
+ * Emit surface for {@link PaymentEvents}. Not part of the SDK's public API.
+ *
+ * Deliberately not exported from `src/index.ts`. It exists so the one place
+ * that reads `config.events.payment` at fire time and isolates the merchant's
+ * callback can be injected into a `core/` service without that service learning
+ * how a callback is invoked — `core/` may not touch `console`.
+ *
+ * No method here throws.
+ *
+ * @internal
+ */
+export interface PaymentEventSink {
+  onCompleted(transaction: RawTransaction): void;
+  onError(error: AppError): void;
+  onCancel(): void;
+}
+
+/**
  * Namespaced event callbacks on `config`. Presentation callbacks live under
- * `presentation`; input-field events are per-component (on the `'card_fields'`
- * component options), NOT here.
+ * `presentation` and payment-result callbacks under `payment`; input-field
+ * events are per-component (on the `'card_fields'` component options), NOT here.
  */
 export interface TonderEvents {
   presentation?: PresentationEvents;
+  /**
+   * Payment-result callbacks shared by every payment method the SDK completes,
+   * `pay()` and the Apple Pay button alike. Read at fire time.
+   */
+  payment?: PaymentEvents;
 }
 
 /**
@@ -84,9 +148,10 @@ export interface TonderConfig {
   presentation_mode?: 'redirect' | 'embedded';
   /**
    * Namespaced event callbacks. Presentation lifecycle callbacks live under
-   * `events.presentation`; they are read at FIRE time, so a config mutated
-   * after `createTonder` is still honored. Input-field events do NOT live here
-   * — they are per-component (`create('card_fields', { events })`).
+   * `events.presentation` and payment-result callbacks under `events.payment`;
+   * both are read at FIRE time, so a config mutated after `createTonder` is
+   * still honored. Input-field events do NOT live here — they are
+   * per-component (`create('card_fields', { events })`).
    */
   events?: TonderEvents;
 }

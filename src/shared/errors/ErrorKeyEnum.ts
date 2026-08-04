@@ -44,5 +44,19 @@ export enum ErrorKeyEnum {
   REQUEST_FAILED = 'REQUEST_FAILED',
   POLL_TIMEOUT_ERROR = 'POLL_TIMEOUT_ERROR',
   THREEDS_REDIRECTION_ERROR = 'THREEDS_REDIRECTION_ERROR',
+  /**
+   * The business config carries no `apple_pay` block, or its `enabled` flag is
+   * false. A missing `country_code` is NOT a cause — the business country
+   * resolves to a default at the point of read.
+   */
+  APPLE_PAY_NOT_ENABLED = 'APPLE_PAY_NOT_ENABLED',
+  /** The current browser cannot run an Apple Pay session. */
+  APPLE_PAY_UNSUPPORTED_BROWSER = 'APPLE_PAY_UNSUPPORTED_BROWSER',
+  /** The container element for the Apple Pay button was not found in the DOM. */
+  APPLE_PAY_CONTAINER_NOT_FOUND = 'APPLE_PAY_CONTAINER_NOT_FOUND',
+  /** The Apple Pay session failed or was aborted by the browser. */
+  APPLE_PAY_SESSION_ERROR = 'APPLE_PAY_SESSION_ERROR',
+  /** Merchant validation against Apple's servers failed. */
+  APPLE_PAY_VALIDATION_ERROR = 'APPLE_PAY_VALIDATION_ERROR',
   UNKNOWN_ERROR = 'UNKNOWN_ERROR',
 }

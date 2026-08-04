@@ -3,6 +3,7 @@ import { _createTonderWithDeps, Tonder } from './tonder';
 import { AppError } from './shared/errors/AppError';
 import { ErrorKeyEnum } from './shared/errors/ErrorKeyEnum';
 import type { HttpPort } from './ports/http.port';
+import { asHttpPort } from './test-support/http.mock';
 import type {
   PaymentMethodBank,
   PaymentMethodBanks,
@@ -12,7 +13,6 @@ import type {
 const CONFIG: TonderConfig = {
   api_key: 'pk_test_123',
   environment: 'sandbox',
-  return_url: 'https://merchant.example/return',
 };
 
 function backendPaymentMethodBanks(): unknown {
@@ -50,7 +50,7 @@ describe('Tonder.getPaymentMethodBanks', () => {
         return Promise.reject(new Error('unexpected path'));
       },
     );
-    const http: HttpPort = { request: requestSpy };
+    const http: HttpPort = asHttpPort(requestSpy);
     const tonder = _createTonderWithDeps({ config: CONFIG, http });
 
     const result = await tonder.getPaymentMethodBanks();

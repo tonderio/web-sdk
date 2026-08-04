@@ -2,6 +2,14 @@ import type {
   CardFieldErrorMessages,
   CardFieldsCustomization,
 } from './customization';
+import type { TonderMountableComponent } from './component';
+// No import cycle: `apple-pay.ts` imports from `component.ts` and
+// `shared/types`, never from this file. Keeping that graph acyclic is why
+// `component.ts` is a separate module.
+import type {
+  ApplePayButtonComponent,
+  ApplePayButtonOptions,
+} from './apple-pay';
 
 /**
  * Secure card fields the SDK can mount into your checkout form.
@@ -88,8 +96,10 @@ export type CardFieldEntry =
  * - **New card form** (no `card_id`): mounts the fields used by
  *   `pay({ payment_method: { type: 'card' }, ... })` and `enrollCard()`.
  *   Default container ids are kebab-case (e.g. `#collect-card-number`).
- * - **Saved-card CVV** (with `card_id`): mounts the CVV field for that saved
- *   card. Default container id is `#collect-cvv-<card_id>`.
+ * - **Saved-card CVV** (with `card_id`): pass `fields: ['cvv']` to mount the CVV
+ *   field for that saved card. Default container id is `#collect-cvv-<card_id>`.
+ *   `card_id` selects the context; it does NOT narrow the `fields` default, so
+ *   omitting `fields` here still requests the full five-field form.
  */
 export interface CardFieldsOptions {
   /**
@@ -98,7 +108,12 @@ export interface CardFieldsOptions {
    * and CVV.
    */
   fields?: CardFieldEntry[];
-  /** Identifier of a saved card. When present, mounts the saved-card CVV field. */
+  /**
+   * Identifier of a saved card. Routes this component to the
+   * `update:<card_id>` context and switches the CVV default container to
+   * `#collect-cvv-<card_id>`. Pair it with `fields: ['cvv']` — on its own it
+   * does not reduce the set of fields mounted.
+   */
   card_id?: string;
   /**
    * Which previously-mounted context(s) to unmount before mounting. Defaults to
@@ -160,26 +175,24 @@ export interface RevealCardFieldsInput {
 
 /**
  * The set of UI component types the SDK can construct via
- * `tonder.create(type, options)`. Declared as a union with a single member for
- * now (`'card_fields'`); future roadmap components (`'saved_cards'`, `'checkout'`,
- * `'apmSelector'`) extend it additively with zero breaking change.
+ * `tonder.create(type, options)`. Future roadmap components (`'saved_cards'`,
+ * `'checkout'`, `'apmSelector'`) extend it additively with zero breaking
+ * change — but only in the change that implements the runtime, never ahead of
+ * it: a declared member the factory cannot construct makes `create()`
+ * type-check and then throw.
  */
-export type TonderComponentType = 'card_fields';
+export type TonderComponentType = 'card_fields' | 'apple_pay_button';
 
 /**
  * Handle returned by `tonder.create('card_fields', options)`.
  *
  * Use it to mount, unmount, and reveal secure card fields for the configured
- * component instance.
+ * component instance. `mount()` renders the secure fields into their per-field
+ * containers (from `options.fields`) and `unmount()` tears down only this
+ * instance's fields; both come from {@link TonderMountableComponent} and are
+ * deliberately not redeclared here.
  */
-export interface CardFieldsComponent {
-  /**
-   * Mount the secure card fields into their per-field containers (from
-   * `options.fields`). Requires `init()` to have completed.
-   */
-  mount(): Promise<void>;
-  /** Unmount this component's fields. */
-  unmount(): void;
+export interface CardFieldsComponent extends TonderMountableComponent {
   /**
    * Reveal the last-collected tokens into merchant reveal containers. Replaces
    * the removed top-level `revealCardFields`. Scoped to this component's collect.
@@ -188,16 +201,38 @@ export interface CardFieldsComponent {
 }
 
 /**
- * Union of all component handles `tonder.create()` can return. Today just
- * {@link CardFieldsComponent}; grows with the component roadmap.
- */
-export type TonderComponent = CardFieldsComponent;
-
-/**
  * Maps each {@link TonderComponentType} to its construction options. Lets
  * `create<T>(type, options)` type-check `options` against the chosen `type`.
+ *
+ * An explicit interface, not a `Record`: indexing `ComponentOptionsByType[T]`
+ * only compiles while every member of {@link TonderComponentType} is a key, so
+ * adding a component type without adding it here is a compile error on
+ * `create()` instead of a silently wrong option type.
  */
-export type ComponentOptionsByType = Record<
-  TonderComponentType,
-  CardFieldsOptions | undefined
->;
+export interface ComponentOptionsByType {
+  card_fields: CardFieldsOptions | undefined;
+  /**
+   * REQUIRED, unlike `card_fields`: `payment` has no sensible default. The
+   * public `create<T>()` signature still declares `options?`, so
+   * `create('apple_pay_button')` with nothing type-checks anyway — tightening
+   * that would need a conditional type on the public signature. `create()`
+   * guards it at runtime instead, so the failure lands there rather than as a
+   * `TypeError` reading `.amount` at click time.
+   */
+  apple_pay_button: ApplePayButtonOptions;
+}
+
+/**
+ * Maps each {@link TonderComponentType} to the handle `create()` returns for
+ * it. Sibling of {@link ComponentOptionsByType}, under the same guardrail.
+ */
+export interface ComponentByType {
+  card_fields: CardFieldsComponent;
+  apple_pay_button: ApplePayButtonComponent;
+}
+
+/**
+ * Union of all component handles `tonder.create()` can return. Derived from
+ * {@link ComponentByType} — never hand-maintained.
+ */
+export type TonderComponent = ComponentByType[TonderComponentType];

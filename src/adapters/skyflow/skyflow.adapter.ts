@@ -2,6 +2,7 @@ import type { VaultService } from '../../core/services/vault.service';
 import type { TokenizerPort } from '../../ports/tokenizer.port';
 import { AppError } from '../../shared/errors/AppError';
 import { ErrorKeyEnum } from '../../shared/errors/ErrorKeyEnum';
+import { invokeMerchantCallback } from '../../shared/merchant-callback';
 import type { TonderMode } from '../../shared/config/env';
 import type {
   CardField,
@@ -310,10 +311,19 @@ export class SkyflowAdapter implements TokenizerPort {
           ...(request.card_id ? { skyflowID: request.card_id } : {}),
         });
         this.wireFieldEvents(skyflow, element, field, request.events?.[field]);
-        await this.tryMountElement(element, container_id);
+        // Collect is all-or-nothing: the shopper must fill every field, so an
+        // absent container throws and surfaces as MOUNT_COLLECT_ERROR below.
+        if (!(await SkyflowAdapter.waitForContainer(container_id))) {
+          throw new Error(SkyflowAdapter.missingContainerDetail(container_id));
+        }
+        element.mount(container_id);
         elements.push(element);
       }
     } catch (error) {
+      // `contexts` is only written below, after this catch, so a rethrow leaves
+      // the fields already mounted in this call with no handle to unmount them.
+      // Tear them down here or they survive as orphaned secure iframes.
+      SkyflowAdapter.unmountElements(elements, context);
       throw new AppError({
         errorCode: ErrorKeyEnum.MOUNT_COLLECT_ERROR,
         originalError: error,
@@ -337,7 +347,8 @@ export class SkyflowAdapter implements TokenizerPort {
 
   /**
    * Collect mounted fields into per-field Skyflow tokens.
-   * Returns the raw Skyflow snake_case token map — INTERNAL only.
+   * Returns the raw Skyflow snake_case token map, keyed by Skyflow's own
+   * column names rather than this SDK's field names.
    * Callers (core/services) must not expose this map directly as public API.
    */
   public async collect(
@@ -403,6 +414,16 @@ export class SkyflowAdapter implements TokenizerPort {
       const container_id =
         cfg.container_id ??
         REVEAL_DEFAULT_CONTAINER_ID[field as RevealableCardField];
+      // Reveal shows whatever it can, so a missing container skips the field
+      // rather than failing the call. Resolve it BEFORE create(): the reveal
+      // container waits on every element it was given until each reports
+      // mounted, so an element for a container that never appears would hold
+      // the merchant's promise for the vault SDK's full timeout.
+      if (!(await SkyflowAdapter.waitForContainer(container_id))) {
+        console.warn(SkyflowAdapter.missingContainerDetail(container_id));
+        continue;
+      }
+
       const element = container.create({
         token,
         redaction: redactionByField[field as RevealableCardField],
@@ -410,7 +431,7 @@ export class SkyflowAdapter implements TokenizerPort {
         ...(cfg.label !== undefined ? { label: cfg.label } : {}),
         ...this.resolveRevealStyles(cfg.styles, request.styles),
       });
-      await this.tryMountElement(element, container_id);
+      element.mount(container_id);
     }
 
     try {
@@ -470,7 +491,18 @@ export class SkyflowAdapter implements TokenizerPort {
   private unmountContext(context: string): void {
     const data = this.contexts.get(context);
     if (!data) return;
-    for (const element of data.elements) {
+    SkyflowAdapter.unmountElements(data.elements, context);
+  }
+
+  /**
+   * Unmounts every element, isolating each failure so one bad unmount can neither
+   * skip the rest nor mask the error that triggered the teardown.
+   */
+  private static unmountElements(
+    elements: SkyflowElement[],
+    context: string,
+  ): void {
+    for (const element of elements) {
       try {
         element.unmount?.();
       } catch (error) {
@@ -527,13 +559,14 @@ export class SkyflowAdapter implements TokenizerPort {
    * Wires Skyflow element events to merchant callbacks and restores the SDK-owned
    * error label on blur.
    *
-   * On blur+invalid the order is LOAD-BEARING and test-covered:
-   * the SDK applies the error message before it reapplies `errorTextStyles`.
-   * When available, it uses Skyflow's `setErrorOverride`, matching Hosted
-   * Checkout behavior for browser/password-manager autofill edge cases.
+   * On blur+invalid the order is LOAD-BEARING and test-covered: the error
+   * message is applied before `errorTextStyles` is reapplied.
    *
-   * Merchant callbacks always receive the normalized {@link CardFieldState} — the
-   * raw Skyflow element state is never passed through.
+   * Merchant callbacks always receive the normalized {@link CardFieldState};
+   * the raw vault element state is never passed through. Each is isolated — a
+   * throw would otherwise escape into the vault SDK's event dispatch AND skip
+   * the error-label work that runs right after it, leaving a stale message on
+   * screen.
    */
   private wireFieldEvents(
     skyflow: SkyflowStatic,
@@ -544,20 +577,24 @@ export class SkyflowAdapter implements TokenizerPort {
     if (typeof element.on !== 'function') return;
 
     const emit = (
+      name: string,
       state: SkyflowElementState,
       handler: ((state: CardFieldState) => void) | undefined,
     ): void => {
+      if (!handler) return;
       const normalized = this.toCardFieldState(state, field);
-      handler?.(normalized);
+      invokeMerchantCallback(`card_fields.${field}.${name}`, () =>
+        handler(normalized),
+      );
     };
 
     element.on(skyflow.EventName.CHANGE, (state) => {
-      emit(state, events?.on_change);
+      emit('on_change', state, events?.on_change);
       this.updateErrorLabel(element, field, 'transparent');
     });
 
     element.on(skyflow.EventName.BLUR, (state) => {
-      emit(state, events?.on_blur);
+      emit('on_blur', state, events?.on_blur);
       if (!state.isValid) {
         const message = this.resolveErrorMessage(field, state);
         // Prefer Hosted Checkout's runtime API; fall back for older SDK surfaces.
@@ -573,13 +610,13 @@ export class SkyflowAdapter implements TokenizerPort {
     });
 
     element.on(skyflow.EventName.FOCUS, (state) => {
-      emit(state, events?.on_focus);
+      emit('on_focus', state, events?.on_focus);
       this.updateErrorLabel(element, field, 'transparent');
       element.resetError?.();
     });
 
     element.on(skyflow.EventName.READY, (state) => {
-      emit(state, events?.on_ready);
+      emit('on_ready', state, events?.on_ready);
     });
   }
 
@@ -691,25 +728,29 @@ export class SkyflowAdapter implements TokenizerPort {
     return out;
   }
 
-  /** Mounts after the node appears. Warn-only on miss — never throws. */
-  private async tryMountElement(
-    element: SkyflowElement,
+  /**
+   * Waits for a container node to appear, retrying within the mount budget
+   * because a merchant's container can paint a frame or two after the call.
+   * Returns `false` when it never shows up, so each caller applies its own
+   * contract — `mount()` throws, `reveal()` skips the field.
+   */
+  private static async waitForContainer(
     container_id: string,
-  ): Promise<void> {
+  ): Promise<boolean> {
     for (let attempt = 0; attempt <= MOUNT_RETRIES; attempt++) {
-      if (document.querySelector(container_id)) {
-        element.mount(container_id);
-        return;
-      }
+      if (document.querySelector(container_id)) return true;
       if (attempt < MOUNT_RETRIES) {
         await new Promise((resolve) =>
           setTimeout(resolve, MOUNT_RETRY_DELAY_MS),
         );
       }
     }
-    console.warn(
-      `[card_fields] Container ${container_id} not found after ${MOUNT_RETRIES + 1} attempts`,
-    );
+    return false;
+  }
+
+  /** Names the selector, which the shared error copy cannot. */
+  private static missingContainerDetail(container_id: string): string {
+    return `[card_fields] Container ${container_id} not found after ${MOUNT_RETRIES + 1} attempts`;
   }
 
   private static fieldOf(entry: CardFieldEntry): CardField {

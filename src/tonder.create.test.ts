@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { _createTonderWithDeps } from './tonder';
 import { AppError } from './shared/errors/AppError';
 import { ErrorKeyEnum } from './shared/errors/ErrorKeyEnum';
-import type { HttpPort } from './ports/http.port';
+import { asHttpPort } from './test-support/http.mock';
 import type { TokenizerPort } from './ports/tokenizer.port';
 import type { BusinessConfig } from './models/business.model';
 import type { TonderConfig } from './shared/types';
@@ -11,7 +11,6 @@ import type { CardFieldsOptions } from './types/card';
 const CONFIG: TonderConfig = {
   api_key: 'pk_test_123',
   environment: 'sandbox',
-  return_url: 'https://merchant.example/return',
 };
 
 function makeBusinessConfig(): BusinessConfig {
@@ -25,7 +24,7 @@ function makeBusinessConfig(): BusinessConfig {
       full_logo_url: 'https://acme.test/logo.png',
       background_color: '#fff',
       primary_color: '#000',
-      checkout_environment: true,
+      checkout_mode: true,
       textCheckoutColor: '#111',
       textDetailsColor: '#222',
       checkout_logo: 'checkout.png',
@@ -41,10 +40,6 @@ function makeBusinessConfig(): BusinessConfig {
   };
 }
 
-function mockHttp(impl: HttpPort['request']): HttpPort {
-  return { request: vi.fn(impl) };
-}
-
 function mockTokenizer(): TokenizerPort & {
   mount: ReturnType<typeof vi.fn>;
   unmount: ReturnType<typeof vi.fn>;
@@ -53,14 +48,14 @@ function mockTokenizer(): TokenizerPort & {
 } {
   return {
     mount: vi.fn(() => Promise.resolve()),
-    unmount: vi.fn(),
+    unmount: vi.fn<TokenizerPort['unmount']>(),
     collect: vi.fn(() => Promise.resolve({})),
     reveal: vi.fn(() => Promise.resolve()),
   };
 }
 
 async function readyTonder(tokenizer: TokenizerPort) {
-  const http = mockHttp(() => Promise.resolve(makeBusinessConfig()));
+  const http = asHttpPort(() => Promise.resolve(makeBusinessConfig()));
   const tonder = _createTonderWithDeps({ config: CONFIG, http, tokenizer });
   await tonder.init();
   return tonder;
@@ -98,7 +93,7 @@ describe('Tonder.create — component factory', () => {
 
   it('mount before init (not ready) throws AppError(NOT_INITIALIZED)', async () => {
     const tokenizer = mockTokenizer();
-    const http = mockHttp(() => Promise.resolve(makeBusinessConfig()));
+    const http = asHttpPort(() => Promise.resolve(makeBusinessConfig()));
     const tonder = _createTonderWithDeps({ config: CONFIG, http, tokenizer });
 
     const component = tonder.create('card_fields', { fields: ['card_number'] });
@@ -155,6 +150,29 @@ describe('Tonder.create — component factory', () => {
     expect(tokenizer.unmount).toHaveBeenCalledWith('update:card_42');
   });
 
+  it('create("card_fields", { card_id }) with no fields still requests all five', async () => {
+    const tokenizer = mockTokenizer();
+    const tonder = await readyTonder(tokenizer);
+
+    const component = tonder.create('card_fields', { card_id: 'card_42' });
+    await component.mount();
+
+    // The default is NOT narrowed for saved cards. A saved-card page that
+    // renders only #collect-cvv-card_42 therefore fails to mount, and before
+    // mount() enforced containers it failed later at Skyflow's collect() gate.
+    // The documented saved-card flow passes `fields: ['cvv']` explicitly.
+    expect(tokenizer.mount).toHaveBeenCalledWith({
+      card_id: 'card_42',
+      fields: [
+        'cardholder_name',
+        'card_number',
+        'expiration_month',
+        'expiration_year',
+        'cvv',
+      ],
+    });
+  });
+
   it('two components coexist independently without cross-contamination', async () => {
     const tokenizer = mockTokenizer();
     const tonder = await readyTonder(tokenizer);
@@ -190,7 +208,7 @@ describe('Tonder.create — component factory', () => {
 
   it('reveal before ready throws NOT_INITIALIZED', async () => {
     const tokenizer = mockTokenizer();
-    const http = mockHttp(() => Promise.resolve(makeBusinessConfig()));
+    const http = asHttpPort(() => Promise.resolve(makeBusinessConfig()));
     const tonder = _createTonderWithDeps({ config: CONFIG, http, tokenizer });
 
     const component = tonder.create('card_fields', { fields: ['card_number'] });

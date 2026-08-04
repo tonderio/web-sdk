@@ -1,7 +1,8 @@
 import { describe, it, expect, vi } from 'vitest';
 import { _createTonderWithDeps } from './tonder';
 import { ErrorKeyEnum } from './shared/errors/ErrorKeyEnum';
-import type { HttpPort } from './ports/http.port';
+import type { HttpPort, HttpRequestOptions } from './ports/http.port';
+import { asHttpPort } from './test-support/http.mock';
 import type { TokenizerPort } from './ports/tokenizer.port';
 import type { BusinessConfig } from './models/business.model';
 import type { TonderConfig } from './shared/types';
@@ -12,7 +13,6 @@ function config(overrides: Partial<TonderConfig> = {}): TonderConfig {
   return {
     api_key: 'pk_test_123',
     environment: 'sandbox',
-    return_url: 'https://merchant.example/return',
     session: { secure_token: SECURE_TOKEN, ...overrides.session },
     ...overrides,
   };
@@ -29,7 +29,7 @@ function makeBusinessConfig(): BusinessConfig {
       full_logo_url: 'https://acme.test/logo.png',
       background_color: '#fff',
       primary_color: '#000',
-      checkout_environment: true,
+      checkout_mode: true,
       textCheckoutColor: '#111',
       textDetailsColor: '#222',
       checkout_logo: 'checkout.png',
@@ -77,29 +77,27 @@ function mockHttp(): {
     auth_token: `cust_tok_${email}`,
   }));
   let saveCount = 0;
-  const http: HttpPort = {
-    request: vi.fn(<T>(options: Parameters<HttpPort['request']>[0]) => {
-      if (options.path === '/api/v1/customer/') {
-        const email = (options.body as { email: string }).email;
-        return Promise.resolve(customerSpy(email) as unknown as T);
-      }
-      if (options.method === 'POST' && options.path.endsWith('/cards/')) {
-        saveCount += 1;
-        return Promise.resolve({
-          skyflow_id: `sky_${saveCount}`,
-          user_id: 'u_1',
-          card_bin: '411111',
-        } as unknown as T);
-      }
-      if (options.method === 'GET' && options.path.endsWith('/cards/')) {
-        return Promise.resolve({ user_id: 'u_1', cards: [] } as unknown as T);
-      }
-      if (options.method === 'DELETE') {
-        return Promise.resolve({} as unknown as T);
-      }
-      return Promise.resolve(makeBusinessConfig() as unknown as T);
-    }),
-  };
+  const http: HttpPort = asHttpPort((options: HttpRequestOptions) => {
+    if (options.path === '/api/v1/customer/') {
+      const email = (options.body as { email: string }).email;
+      return Promise.resolve(customerSpy(email));
+    }
+    if (options.method === 'POST' && options.path.endsWith('/cards/')) {
+      saveCount += 1;
+      return Promise.resolve({
+        skyflow_id: `sky_${saveCount}`,
+        user_id: 'u_1',
+        card_bin: '411111',
+      });
+    }
+    if (options.method === 'GET' && options.path.endsWith('/cards/')) {
+      return Promise.resolve({ user_id: 'u_1', cards: [] });
+    }
+    if (options.method === 'DELETE') {
+      return Promise.resolve({});
+    }
+    return Promise.resolve(makeBusinessConfig());
+  });
   return { http, customerSpy };
 }
 
