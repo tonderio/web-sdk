@@ -3,41 +3,22 @@ import type {
   SavedCardPaymentMethod,
 } from '../strategies/card.strategy';
 import type { ApmPaymentMethod } from '../strategies/apm.strategy';
+import type { ApplePayPaymentMethod } from '../strategies/apple-pay.strategy';
 import type { BackendTransactionResponse } from '../../models/transaction.model';
+import type {
+  BackendPaymentMethod,
+  BackendPaymentMethodsPage,
+} from '../../models/payment-method.model';
 import type { HttpPort } from '../../ports/http.port';
 import { AppError } from '../../shared/errors/AppError';
 import { ErrorKeyEnum } from '../../shared/errors/ErrorKeyEnum';
-import type {
-  BillingAddress,
-  PaymentMethodBank,
-  PaymentMethodInfo,
-} from '../../shared/types';
-import { getPaymentMethodCatalogDetails } from '../../shared/payment-method-catalog';
+import type { BillingAddress, PaymentMethodBank } from '../../shared/types';
 
-/** SDK transport shape for one payment-method record. */
-interface BackendPaymentMethod {
-  pk: number;
-  payment_method: string;
-  acquirer?: string;
-  status?: string;
-  priority: number;
-  category: string;
-  label?: string;
-  name?: string;
-  logo?: string;
-  icon?: string;
-  unavailable_countries?: string[];
-}
-
-/** SDK transport shape for a paginated payment-method response. */
-interface BackendPaymentMethodsPage {
-  count?: number;
-  next?: string | null;
-  previous?: string | null;
-  results: BackendPaymentMethod[];
-}
-
-/** INTERNAL snake_case body of one bank option in the payment-method banks response. */
+/**
+ * Raw snake_case body of one bank option in the payment-method banks response.
+ * Not part of the SDK's public API — the merchant-facing shape is the mapped
+ * projection.
+ */
 interface BackendPaymentMethodBank {
   id: number;
   bank: {
@@ -58,18 +39,6 @@ interface BackendPaymentMethodBank {
 interface BackendPaymentMethodBanksResponse {
   cash?: BackendPaymentMethodBank[];
   transfer?: BackendPaymentMethodBank[];
-}
-
-/** Pure snake→camel projection of one payment-method record. */
-function mapPaymentMethod(raw: BackendPaymentMethod): PaymentMethodInfo {
-  const catalog = getPaymentMethodCatalogDetails(raw.payment_method);
-  return {
-    id: raw.pk,
-    payment_method: raw.payment_method,
-    label: raw.label ?? raw.name ?? catalog.label,
-    logo: raw.logo ?? raw.icon ?? catalog.logo,
-    category: raw.category,
-  };
 }
 
 /** Pure snake→camel projection of one payment method bank option (promotes `bank.*`). */
@@ -96,7 +65,19 @@ export interface ProcessPaymentBody {
   return_url: string;
   presentation_mode?: 'redirect' | 'embedded';
   customer: { name: string; email: string };
-  payment_method: CardPaymentMethod | SavedCardPaymentMethod | ApmPaymentMethod;
+  /**
+   * `ApplePayPaymentMethod` is listed EXPLICITLY rather than left to
+   * `ApmPaymentMethod`'s structural `type: string`, which already makes it
+   * assignable. Relying on that accident would make this union a lie: it would
+   * read as "card, saved card or APM" while silently also accepting a wallet
+   * block, and a later tightening of `ApmPaymentMethod` would break Apple Pay
+   * with no signal at this declaration.
+   */
+  payment_method:
+    | CardPaymentMethod
+    | SavedCardPaymentMethod
+    | ApmPaymentMethod
+    | ApplePayPaymentMethod;
   client_reference: string;
   metadata?: Record<string, unknown>;
   billing_address?: BillingAddress;
@@ -109,12 +90,12 @@ export interface ProcessPaymentBody {
  * `processPayment` POSTs to `/api/v1/process/` with `X-Request-Id` only
  * when the caller supplies an idempotency key. `presentation_mode` travels in
  * the request body so Direct API users and SDK users share the same contract.
- * Any transport
- * failure (the port throws, or an unknown error) is re-wrapped as
- * `AppError(PAYMENT_PROCESS_ERROR)`. An existing
- * `AppError` is re-thrown unchanged (no double-wrap), then normalized by the
- * caller. NOTE: a DECLINE is delivered as HTTP 200 with a decline `status` in
- * the body — it does NOT throw here.
+ * Every transport failure is wrapped UNCONDITIONALLY as
+ * `AppError(PAYMENT_PROCESS_ERROR)` — including an incoming `AppError`, which
+ * is re-wrapped rather than re-thrown. There is no `instanceof AppError`
+ * re-throw guard on any method here. Collapsing a double wrap is the
+ * CONSUMER's job. NOTE: a DECLINE is delivered as HTTP 200 with a decline
+ * `status` in the body — it does NOT throw here.
  */
 export class DirectApiService {
   private readonly http: HttpPort;
@@ -174,15 +155,22 @@ export class DirectApiService {
   }
 
   /**
-   * List the business's active payment methods via
+   * Fetch the RAW active payment-method catalog via
    * `GET /api/v1/payment_methods?status=active`.
    *
-   * PURE: depends only on the injected {@link HttpPort}; the `Token` auth header
-   * is attached by the transport. The snake_case records are mapped to the
-   * public {@link PaymentMethodInfo} shape. Any transport failure is re-wrapped
-   * as `AppError(FETCH_PAYMENT_METHODS_ERROR)`.
+   * Unmapped and UNFILTERED — the result still contains the `apple_pay_*`
+   * entries. Not public API, and never cached: this is the transport behind
+   * `getPaymentMethods()`, which issues a fresh call every time. Never hand the
+   * result to a merchant; only the public projection produces a merchant-facing
+   * shape.
+   *
+   * The paginated envelope is flattened here so no reader has to repeat the
+   * `Array.isArray` normalization; the pagination fields are transport metadata
+   * the SDK ignores. Any transport failure is re-wrapped as
+   * `AppError(FETCH_PAYMENT_METHODS_ERROR)` — the same code the public call
+   * uses, produced in exactly one place.
    */
-  public async getPaymentMethods(): Promise<PaymentMethodInfo[]> {
+  public async getPaymentMethodCatalog(): Promise<BackendPaymentMethod[]> {
     try {
       const raw = await this.http.request<
         BackendPaymentMethod[] | BackendPaymentMethodsPage
@@ -190,8 +178,7 @@ export class DirectApiService {
         method: 'GET',
         path: '/api/v1/payment_methods?status=active',
       });
-      const methods = Array.isArray(raw) ? raw : raw.results;
-      return methods.map(mapPaymentMethod);
+      return Array.isArray(raw) ? raw : raw.results;
     } catch (error) {
       throw new AppError({
         errorCode: ErrorKeyEnum.FETCH_PAYMENT_METHODS_ERROR,

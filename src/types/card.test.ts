@@ -11,6 +11,8 @@ import type {
   TonderComponent,
   CardFieldsComponent,
 } from './card';
+import type { TonderMountableComponent } from './component';
+import type { ApplePayButtonComponent } from './apple-pay';
 import type { TonderConfig } from '../shared/types';
 import type {
   TonderCustomization,
@@ -110,17 +112,36 @@ describe('card field event types', () => {
     expectTypeOf<RevealCardFieldsInput['fields']>().toBeArray();
   });
 
-  it('TonderComponentType is the "card_fields" union', () => {
+  it('TonderComponentType unions every mountable component', () => {
     const type: TonderComponentType = 'card_fields';
     expect(type).toBe('card_fields');
-    expectTypeOf<TonderComponentType>().toEqualTypeOf<'card_fields'>();
+    expectTypeOf<TonderComponentType>().toEqualTypeOf<
+      'card_fields' | 'apple_pay_button'
+    >();
   });
 
   it('CardFieldsComponent exposes mount/unmount/reveal; TonderComponent unions it', () => {
     expectTypeOf<CardFieldsComponent['mount']>().toBeFunction();
     expectTypeOf<CardFieldsComponent['unmount']>().toBeFunction();
     expectTypeOf<CardFieldsComponent['reveal']>().toBeFunction();
-    expectTypeOf<TonderComponent>().toEqualTypeOf<CardFieldsComponent>();
+    // TonderComponent is derived (ComponentByType[TonderComponentType]), so it
+    // grows with the union: it now also covers the Apple Pay button handle.
+    expectTypeOf<TonderComponent>().toEqualTypeOf<
+      CardFieldsComponent | ApplePayButtonComponent
+    >();
+  });
+
+  it('CardFieldsComponent is assignable to TonderMountableComponent', () => {
+    const component: CardFieldsComponent = {
+      mount: () => Promise.resolve(),
+      unmount: () => undefined,
+      reveal: () => Promise.resolve(),
+    };
+    const mountable: TonderMountableComponent = component;
+
+    expect(typeof mountable.mount).toBe('function');
+    expect(typeof mountable.unmount).toBe('function');
+    expectTypeOf<CardFieldsComponent>().toMatchTypeOf<TonderMountableComponent>();
   });
 
   it('TonderConfig namespaces card-field customization under customization.card_fields', () => {

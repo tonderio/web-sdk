@@ -2,7 +2,8 @@ import { afterEach, describe, it, expect, vi, expectTypeOf } from 'vitest';
 import { _createTonderWithDeps } from './tonder';
 import { AppError } from './shared/errors/AppError';
 import { ErrorKeyEnum } from './shared/errors/ErrorKeyEnum';
-import type { HttpPort } from './ports/http.port';
+import type { HttpPort, HttpRequestOptions } from './ports/http.port';
+import { asHttpPort } from './test-support/http.mock';
 import type { TokenizerPort } from './ports/tokenizer.port';
 import type { ThreeDsHostPort } from './ports/threeds-host.port';
 import type { CheckoutMessengerPort } from './ports/checkout-messenger.port';
@@ -13,7 +14,6 @@ import type { PayInput, TonderConfig } from './shared/types';
 const CONFIG: TonderConfig = {
   api_key: 'pk_test_123',
   environment: 'sandbox',
-  return_url: 'https://merchant.example/return',
   session: {
     customer: {
       email: 'ada@example.com',
@@ -89,7 +89,11 @@ function mockHost(): ThreeDsHostPort & {
   close: ReturnType<typeof vi.fn>;
   redirect: ReturnType<typeof vi.fn>;
 } {
-  return { redirect: vi.fn(), open: vi.fn(), close: vi.fn() };
+  return {
+    redirect: vi.fn<ThreeDsHostPort['redirect']>(),
+    open: vi.fn<ThreeDsHostPort['open']>(),
+    close: vi.fn<ThreeDsHostPort['close']>(),
+  };
 }
 
 function backendResponse(
@@ -127,21 +131,17 @@ function controllableHttp(opts: {
   onTransaction: (callIndex: number) => Promise<unknown>;
 }): { http: HttpPort; transactionCalls: () => number } {
   let calls = 0;
-  const http: HttpPort = {
-    request: vi.fn(<T>(options: Parameters<HttpPort['request']>[0]) => {
-      if (options.path === '/api/v1/process/') {
-        return Promise.resolve(
-          (opts.process ?? requiresActionResponse()) as unknown as T,
-        );
-      }
-      if (options.path.startsWith('/api/v1/transactions/')) {
-        const idx = calls;
-        calls += 1;
-        return opts.onTransaction(idx) as Promise<T>;
-      }
-      return Promise.resolve(makeBusinessConfig() as unknown as T);
-    }),
-  };
+  const http: HttpPort = asHttpPort((options: HttpRequestOptions) => {
+    if (options.path === '/api/v1/process/') {
+      return Promise.resolve(opts.process ?? requiresActionResponse());
+    }
+    if (options.path.startsWith('/api/v1/transactions/')) {
+      const idx = calls;
+      calls += 1;
+      return opts.onTransaction(idx);
+    }
+    return Promise.resolve(makeBusinessConfig());
+  });
   return { http, transactionCalls: () => calls };
 }
 
@@ -259,10 +259,17 @@ describe('TonderConfig presentation-events surface', () => {
     };
     expect(good.events?.presentation?.on_open).toBeTypeOf('function');
 
-    // @ts-expect-error — onComplete is not part of the public presentation events API.
     const badPresentation: TonderConfig = {
       ...CONFIG,
-      events: { presentation: { onComplete: () => undefined } },
+      events: {
+        presentation: {
+          // @ts-expect-error — onComplete is not part of the public presentation
+          // events API. The directive must sit on the offending property: it
+          // suppresses the NEXT line only, and on the `const` it silently
+          // covered nothing.
+          onComplete: () => undefined,
+        },
+      },
     };
     void badPresentation;
 
@@ -360,6 +367,34 @@ describe('Tonder.handleRequiresAction — messenger-driven reconcile (embedded)'
     expect(host.close).not.toHaveBeenCalled();
   });
 
+  it('an external abort during the challenge rejects pay() with REQUEST_ABORTED and still closes the modal', async () => {
+    // The fixture below existed with no test behind it, so the external-abort
+    // path was never exercised: nothing proved the modal comes down when the
+    // wait is cancelled from outside the SDK's own race controller.
+    const external = new AbortController();
+    const messenger = externallyAbortedMessenger(external);
+    const { http, transactionCalls } = controllableHttp({
+      onTransaction: () =>
+        Promise.resolve(backendResponse({ status: 'Authorized' })),
+    });
+    const host = mockHost();
+    const tonder = await readyTonder({ http, host, messenger });
+
+    const payPromise = tonder.pay(payInput());
+    await vi.waitFor(() => {
+      expect(messenger.waitForCompletion).toHaveBeenCalledTimes(1);
+    });
+    external.abort();
+    const err = await payPromise.catch((e: unknown) => e as AppError);
+
+    expect(err).toBeInstanceOf(AppError);
+    expect(err.code).toBe(ErrorKeyEnum.REQUEST_ABORTED);
+    // The reconcile must never start once the wait was cancelled...
+    expect(transactionCalls()).toBe(0);
+    // ...and the iframe must not be left on screen over a dead payment.
+    expect(host.close).toHaveBeenCalledTimes(1);
+  });
+
   it('reconcile timeout after messenger completion surfaces POLL_TIMEOUT_ERROR and unmounts iframe', async () => {
     vi.useFakeTimers();
     const messenger = controllableMessenger();
@@ -409,21 +444,19 @@ describe('Tonder.handleRequiresAction — messenger-driven reconcile (embedded)'
 
   it('APM embedded → messenger never called, modal LEFT open (no close), returns bare Pending transaction', async () => {
     const messenger = controllableMessenger();
-    const http: HttpPort = {
-      request: vi.fn(<T>(options: Parameters<HttpPort['request']>[0]) => {
-        if (options.path === '/api/v1/process/') {
-          return Promise.resolve(
-            backendResponse({
-              status: 'pending',
-              next_action: {
-                redirect_to_url: { url: 'https://voucher.example/oxxo' },
-              },
-            }) as unknown as T,
-          );
-        }
-        return Promise.resolve(makeBusinessConfig() as unknown as T);
-      }),
-    };
+    const http: HttpPort = asHttpPort((options: HttpRequestOptions) => {
+      if (options.path === '/api/v1/process/') {
+        return Promise.resolve(
+          backendResponse({
+            status: 'pending',
+            next_action: {
+              redirect_to_url: { url: 'https://voucher.example/oxxo' },
+            },
+          }),
+        );
+      }
+      return Promise.resolve(makeBusinessConfig());
+    });
     const host = mockHost();
     const tonder = await readyTonder({ http, host, messenger });
 
@@ -486,21 +519,19 @@ describe('Tonder.handleRequiresAction — messenger-driven reconcile (embedded)'
   it('embedded APM shopper-close fires events.presentation.on_close via onUserClose; onOpen wired', async () => {
     const onClose = vi.fn();
     const onOpen = vi.fn();
-    const http: HttpPort = {
-      request: vi.fn(<T>(options: Parameters<HttpPort['request']>[0]) => {
-        if (options.path === '/api/v1/process/') {
-          return Promise.resolve(
-            backendResponse({
-              status: 'pending',
-              next_action: {
-                redirect_to_url: { url: 'https://voucher.example/oxxo' },
-              },
-            }) as unknown as T,
-          );
-        }
-        return Promise.resolve(makeBusinessConfig() as unknown as T);
-      }),
-    };
+    const http: HttpPort = asHttpPort((options: HttpRequestOptions) => {
+      if (options.path === '/api/v1/process/') {
+        return Promise.resolve(
+          backendResponse({
+            status: 'pending',
+            next_action: {
+              redirect_to_url: { url: 'https://voucher.example/oxxo' },
+            },
+          }),
+        );
+      }
+      return Promise.resolve(makeBusinessConfig());
+    });
     const host = mockHost();
     const tonder = await readyTonder({
       http,
@@ -513,12 +544,15 @@ describe('Tonder.handleRequiresAction — messenger-driven reconcile (embedded)'
 
     await tonder.pay(payInput({ payment_method: { type: 'oxxo' } }));
 
-    // onOpen is wired from events.presentation.on_open.
+    // onOpen is wired from events.presentation.on_open. The host receives an
+    // isolation wrapper rather than the handler itself, so this asserts the
+    // delegation, not object identity.
     const opts = host.open.mock.calls[0][1] as {
       onOpen?: () => void;
       onUserClose?: () => void;
     };
-    expect(opts.onOpen).toBe(onOpen);
+    opts.onOpen?.();
+    expect(onOpen).toHaveBeenCalledTimes(1);
     // The facade wires events.presentation.on_close as the modal's onUserClose.
     // Simulate the shopper closing the modal by invoking the captured callback.
     opts.onUserClose?.();

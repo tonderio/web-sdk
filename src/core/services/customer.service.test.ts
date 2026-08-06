@@ -1,15 +1,12 @@
 import { describe, it, expect, vi } from 'vitest';
 import { CustomerService } from './customer.service';
 import type { HttpPort } from '../../ports/http.port';
+import { asHttpPort } from '../../test-support/http.mock';
 import { AppError } from '../../shared/errors/AppError';
 import { ErrorKeyEnum } from '../../shared/errors/ErrorKeyEnum';
 import type { Customer } from '../../shared/types';
 
 const API_KEY = 'pk_test_123';
-
-function mockHttp(impl: HttpPort['request']): HttpPort {
-  return { request: vi.fn(impl) };
-}
 
 describe('CustomerService.registerOrFetch', () => {
   it('POSTs /api/v1/customer/ with Token apiKey + email body and maps auth_token → authToken', async () => {
@@ -57,7 +54,7 @@ describe('CustomerService.registerOrFetch', () => {
   });
 
   it('re-wraps an unknown rejection as AppError(CUSTOMER_OPERATION_ERROR)', async () => {
-    const http = mockHttp(() => Promise.reject(new Error('boom')));
+    const http = asHttpPort(() => Promise.reject(new Error('boom')));
     const service = new CustomerService(http);
 
     await expect(
@@ -70,7 +67,7 @@ describe('CustomerService.registerOrFetch', () => {
       errorCode: ErrorKeyEnum.REQUEST_FAILED,
       status_code: 500,
     });
-    const http = mockHttp(() => Promise.reject(inner));
+    const http = asHttpPort(() => Promise.reject(inner));
     const service = new CustomerService(http);
 
     const err = await service

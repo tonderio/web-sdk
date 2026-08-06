@@ -1,4 +1,4 @@
-/** Detokenized card payload required by the COF subscription calls. INTERNAL. */
+/** Detokenized card payload required by the Card-on-File subscription calls. */
 export interface CofCardTokens {
   name: string;
   number: string;

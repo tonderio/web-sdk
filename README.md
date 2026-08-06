@@ -14,11 +14,16 @@ Browser TypeScript SDK for accepting payments with Tonder. It provides secure ca
 - [Quick start: card payment](#quick-start-card-payment)
 - [Configuration](#configuration)
 - [Core concepts](#core-concepts)
+  - [Component lifecycle](#component-lifecycle)
 - [Payment flows](#payment-flows)
 - [API reference](#api-reference)
   - [`createTonder(config)`](#createtonderconfig)
   - [`tonder.init()`](#tonderinit)
   - [`tonder.create('card_fields', options?)`](#tondercreatecard_fields-options)
+  - [`tonder.isApplePayAvailable()`](#tonderisapplepayavailable)
+  - [`tonder.create('apple_pay_button', options)`](#tondercreateapple_pay_button-options)
+  - [`apple_pay_button.mount()`](#apple_pay_buttonmount)
+  - [`apple_pay_button.unmount()`](#apple_pay_buttonunmount)
   - [`card_fields.mount()`](#card_fieldsmount)
   - [`card_fields.unmount()`](#card_fieldsunmount)
   - [`card_fields.reveal(input)`](#card_fieldsrevealinput)
@@ -230,7 +235,12 @@ if (transaction.status === 'Success' || transaction.status === 'Authorized') {
   // Show a recoverable payment message.
   console.warn(transaction.decline_code, transaction.decline_reason);
 }
+
+// Release the secure card fields once you are done with the form.
+card_fields.unmount();
 ```
+
+Whether that final `unmount()` is optional or required depends on how your checkout navigates — see [Component lifecycle](#component-lifecycle).
 
 ## Configuration
 
@@ -288,6 +298,27 @@ const tonder = createTonder({
 | `events.presentation.on_open`  | No                                     | Called when an embedded hosted-payment view opens.                                     |
 | `events.presentation.on_close` | No                                     | Called when the shopper closes a closable embedded hosted-payment view.                |
 | `customization.card_fields`    | No                                     | Labels, placeholders, styles, and validation-message overrides for secure card fields. |
+
+#### A callback of yours that throws cannot change a payment
+
+Every callback you hand the SDK — `events.presentation`, `events.payment`, and the per-field `events` on `create('card_fields', ...)` — is invoked in isolation. If one throws, the SDK reports it through `console.warn` and carries on: the `pay()` promise still resolves with the same transaction it would have resolved with, and the SDK's own work after the callback still runs. A broken analytics line in `on_open` cannot turn a completed charge into a rejected promise you would be tempted to retry.
+
+#### The config is copied when the instance is created
+
+The SDK takes its own copy of the object you pass to `createTonder()`. Keeping a reference and writing to it afterwards changes nothing the SDK sends — the write is ignored, not rejected, so nothing throws. To switch customer, refresh an expired `secure_token`, or change environment, create a new instance.
+
+`events` is the one exception and stays live: see [Results](#results).
+
+| Field                            | After `createTonder()`               |
+| -------------------------------- | ------------------------------------ |
+| `events`                         | Live — read when each callback fires |
+| `session.customer`               | Fixed at creation                    |
+| `session.secure_token`           | Fixed at creation                    |
+| `presentation_mode`              | Fixed at creation                    |
+| `customization.card_fields`      | Fixed at creation                    |
+| `customization.apple_pay_button` | Fixed at creation                    |
+
+`presentation_mode` and `customization.apple_pay_button` were previously read at use time as a side effect of the SDK sharing your object. That was never documented behavior, and it no longer happens — set both at creation.
 
 ### Card field customization
 
@@ -498,6 +529,62 @@ const tonder = createTonder({
 });
 ```
 
+### Component lifecycle
+
+Everything you create with `tonder.create(...)` — `card_fields` and `apple_pay_button` — holds browser resources: secure iframes for card fields, and a payment session for the Apple Pay button. `unmount()` releases them.
+
+**Whether you have to call it depends on how your checkout navigates, not on which framework you use.** If your page unloads to change checkout state, the browser cleans up for you. If your app changes routes without a page load, you own the cleanup.
+
+| Your checkout                                                                                     | What to do                                                                                     |
+| ------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| The page unloads when the shopper leaves it — classic multi-page checkout, form post, full reload | Nothing. The browser tears the page down for you, so a defensive `unmount()` buys you nothing. |
+| Your app changes routes without a page load — any client-side router                              | Call `unmount()` before the checkout view goes away. You own the cleanup.                      |
+
+**What skipping it costs you on a client-side route change.** For Apple Pay, a payment sheet the shopper already opened stays live after you navigate away, and no handle to it survives the route change — nothing can reach it to stop it. If the shopper then authorizes that orphaned sheet, it still charges, using the payment data captured before you left the page. `unmount()` dismisses the sheet and aborts the session. For card fields, `unmount()` releases the secure iframes so your next `mount()` starts from a clean container.
+
+#### Mount and unmount inside a component
+
+Pair each `mount()` with an `unmount()` in your component's cleanup path. The example below uses React's `useEffect`; the same shape applies to `onUnmounted` in Vue, `ngOnDestroy` in Angular, or `onDestroy` in Svelte.
+
+```ts
+import { type TonderMountableComponent } from '@tonder.io/web-sdk';
+
+useEffect(() => {
+  let cancelled = false;
+  let card_fields: TonderMountableComponent | undefined;
+  let apple_pay_button: TonderMountableComponent | undefined;
+
+  void (async () => {
+    await tonder.init();
+    if (cancelled) return;
+
+    card_fields = tonder.create('card_fields');
+    await card_fields.mount();
+    if (cancelled) return;
+
+    if (tonder.isApplePayAvailable().available) {
+      apple_pay_button = tonder.create('apple_pay_button', {
+        payment: {
+          amount: 150,
+          currency: 'MXN',
+          return_url: 'https://yourstore.example/checkout/return',
+          client_reference: 'order_1001',
+        },
+      });
+      await apple_pay_button.mount();
+    }
+  })();
+
+  return () => {
+    cancelled = true;
+    card_fields?.unmount();
+    apple_pay_button?.unmount();
+  };
+}, []);
+```
+
+The `cancelled` flag is not optional decoration. `init()` and `mount()` are async, so a shopper who leaves quickly can make them resolve after your component is already gone — without the flag you would mount into a container that no longer exists.
+
 ## Payment flows
 
 ### New card
@@ -620,11 +707,110 @@ const transaction = await tonder.pay({
 
 APM/SPEI methods often settle asynchronously. Use webhooks for fulfillment.
 
+### Apple Pay
+
+Apple Pay works differently from every other method in this SDK: **the SDK renders the button and owns the click.** You do not call `pay()` for Apple Pay, and there is no promise to await. You give the SDK a container and the payment data, and you receive the result through `events.payment`.
+
+`tonder.pay({ payment_method: { type: 'apple_pay' } })` is rejected on purpose — use the component below.
+
+Apple Pay is only offered when your business has it enabled and the shopper's browser supports it. Check first with `isApplePayAvailable()`, which returns `{ available: true }` or `{ available: false, code, message }`, and render the container only when `available` is `true`. When it is `false`, `code` tells you which of the three conditions failed — log it, because it is the difference between "this browser cannot" and "your account is not enabled".
+
+```html
+<div id="tonder-apple-pay-button"></div>
+```
+
+```ts
+const tonder = createTonder({
+  api_key: 'pk_test_123',
+  environment: 'sandbox',
+  session: { customer: { email: 'ada@example.com' } },
+  events: {
+    payment: {
+      on_completed: (transaction) => {
+        // Fires for every completed charge, INCLUDING a decline — completed is
+        // not paid. Read `transaction.status`, exactly as you would with
+        // `pay()`.
+        console.log(transaction.status);
+      },
+      on_error: (error) => console.error(error.code, error.message),
+      on_cancel: () => console.log('Shopper dismissed the payment sheet'),
+    },
+  },
+});
+
+await tonder.init();
+
+// Call this from wherever your checkout view is torn down.
+let teardownCheckout = () => {};
+
+const availability = tonder.isApplePayAvailable();
+
+if (availability.available) {
+  const button = tonder.create('apple_pay_button', {
+    payment: {
+      amount: 150,
+      currency: 'MXN',
+      return_url: 'https://yourstore.example/checkout/return',
+      client_reference: 'order_1001',
+    },
+  });
+
+  await button.mount();
+
+  teardownCheckout = () => button.unmount();
+} else {
+  // Never guess. `code` is one of NOT_INITIALIZED,
+  // APPLE_PAY_UNSUPPORTED_BROWSER, or APPLE_PAY_NOT_ENABLED.
+  console.info('Apple Pay hidden:', availability.code, availability.message);
+}
+```
+
+`unmount()` removes the button and dismisses the payment sheet if one is open. Call it before the shopper leaves checkout — required if your app changes routes without a page load, because an Apple Pay sheet left open can still be authorized and charge with stale data. See [Component lifecycle](#component-lifecycle).
+
+#### A changing cart
+
+Pass a function instead of an object when the amount is not known at mount time. The SDK calls it at the moment of the click, so the shopper always sees the current total.
+
+**The function must be synchronous.** Return the payment data directly — an `async` function, or anything that awaits a network call, will not work.
+
+```ts
+const button = tonder.create('apple_pay_button', {
+  // Correct: synchronous, reads state you already have.
+  payment: () => ({
+    amount: cart.total,
+    currency: 'MXN',
+    return_url: 'https://yourstore.example/checkout/return',
+    client_reference: cart.orderId,
+    idempotency_key: cart.idempotencyKey,
+    metadata: { cart_id: cart.id },
+    billing_address: cart.billingAddress,
+  }),
+});
+```
+
+If you need server-side data to build the charge, fetch it before the shopper clicks and read it from a variable inside the function.
+
+#### Results
+
+There is no return value to await. Every outcome arrives on `config.events.payment`, which you can also assign after `createTonder()` — including when your original config had no `events` key at all. `events` is read at the moment each callback fires, so it stays live even though the rest of the config is copied at creation:
+
+| Outcome                               | Callback                    |
+| ------------------------------------- | --------------------------- |
+| Charge completed, including a decline | `on_completed(transaction)` |
+| Charge failed                         | `on_error(error)`           |
+| Shopper dismissed the sheet           | `on_cancel()`               |
+
+`on_completed` means the charge reached a final state — not that it was approved. A decline completed: the attempt got a final answer and the answer was no. Branch on `transaction.status` before you fulfill an order. `on_error` is the other channel: an operational failure where no transaction exists at all.
+
+These callbacks are shared by the whole SDK instance: `pay()` fires them too, so one set of handlers covers every payment method you offer.
+
 ## API reference
 
 ### `createTonder(config)`
 
 Creates an SDK instance.
+
+The returned instance carries no readable properties of its own. `JSON.stringify(tonder)` returns `'{}'` and `Object.keys(tonder)` returns `[]`, where both previously dumped the SDK's internals — your API key and session credentials included — into whatever logger they were handed to. Use the documented methods; there is nothing else on the instance to read.
 
 #### Request
 
@@ -714,6 +900,8 @@ interface CardFieldsOptions {
 }
 ```
 
+`unmount_context` controls which previously-mounted card-field context(s) the SDK unmounts before mounting this one. It defaults to `'all'`. Use `'none'` to keep every existing context, `'current'` to replace only the context being mounted, or pass a specific context key to target one.
+
 Default container IDs:
 
 | Field              | Default container                                          |
@@ -740,11 +928,107 @@ interface CardFieldsComponent {
 | ------------------------ | ------------------------------------------ |
 | `INVALID_COMPONENT_TYPE` | The first argument is not `'card_fields'`. |
 
+### `tonder.isApplePayAvailable()`
+
+Tells you whether to render the Apple Pay container, and why not when you should not. Synchronous, makes no network call, and never throws — including before `init()`.
+
+#### Response
+
+```ts
+type ApplePayAvailability =
+  | { available: true }
+  | { available: false; code: string; message: string };
+```
+
+`available` is the discriminant: check it first and TypeScript narrows `code` and `message` into existence.
+
+| `code`                          | Meaning                                     |
+| ------------------------------- | ------------------------------------------- |
+| `NOT_INITIALIZED`               | `init()` has not finished yet.              |
+| `APPLE_PAY_UNSUPPORTED_BROWSER` | This browser cannot run Apple Pay.          |
+| `APPLE_PAY_NOT_ENABLED`         | Apple Pay is not enabled for your business. |
+
+The codes and messages are the same ones `mount()` throws for the same conditions, and when more than one applies you get the one `mount()` would report first — in the order listed above.
+
+#### What `available: true` does and does not promise
+
+It means the browser exposes Apple Pay **and** your business has it enabled. It does **not** promise the payment sheet will open: no synchronous check can. In the iOS Simulator, for example, the browser reports it can make payments, the button renders, and Apple dismisses the sheet the moment it is tapped. Treat `true` as "render the button" and handle what happens after the tap through `config.events.payment`.
+
+```ts
+const availability = tonder.isApplePayAvailable();
+
+if (availability.available) {
+  await tonder.create('apple_pay_button', { payment }).mount();
+} else {
+  console.info('Apple Pay hidden:', availability.code, availability.message);
+}
+```
+
+### `tonder.create('apple_pay_button', options)`
+
+Creates the Apple Pay button component. The SDK renders the button and handles the click; call `mount()` to render it. Results arrive on `config.events.payment`, not as a return value.
+
+#### Request
+
+```ts
+interface ApplePayButtonOptions {
+  /** Container selector. Defaults to '#tonder-apple-pay-button'. */
+  container_id?: string;
+  /**
+   * Payment data for the charge. Pass an object for a fixed amount, or a
+   * SYNCHRONOUS function for a cart that can change after mount.
+   */
+  payment: ApplePayPaymentInput | (() => ApplePayPaymentInput);
+}
+```
+
+`ApplePayPaymentInput` accepts `amount`, `currency`, `return_url`, `client_reference`, `metadata`, `billing_address` and `idempotency_key` — every field `pay()` takes, and each one is sent on the charge. The single field it does not accept is `payment_method`, because the button already is one.
+
+Style the button through `customization.apple_pay_button` on `createTonder()`.
+
+#### Response
+
+```ts
+interface ApplePayButtonComponent {
+  mount(): Promise<void>;
+  unmount(): void;
+}
+```
+
+#### Throws
+
+| Code                      | When                          |
+| ------------------------- | ----------------------------- |
+| `INVALID_PAYMENT_REQUEST` | `options.payment` is missing. |
+
+### `apple_pay_button.mount()`
+
+Renders the Apple Pay button into `container_id`. Calling it again replaces the rendered button.
+
+#### Throws
+
+| Code                            | When                                           |
+| ------------------------------- | ---------------------------------------------- |
+| `NOT_INITIALIZED`               | `init()` has not completed.                    |
+| `APPLE_PAY_UNSUPPORTED_BROWSER` | This browser cannot run Apple Pay.             |
+| `APPLE_PAY_NOT_ENABLED`         | Apple Pay is not enabled for your business.    |
+| `APPLE_PAY_CONTAINER_NOT_FOUND` | No element on the page matches `container_id`. |
+
+### `apple_pay_button.unmount()`
+
+Removes the button and dismisses the payment sheet if one is open. Safe to call more than once.
+
+Skip it on a client-side route change and the open sheet can still be authorized, charging with the payment data captured before you navigated away — see [Component lifecycle](#component-lifecycle).
+
 ### `card_fields.mount()`
 
 Mounts secure card fields into the configured containers.
 
 Each container should cap its layout height before `mount()` runs, for example `.card-field { width: 100%; max-height: 90px; }`, to avoid a visual jump while the secure iframe initializes.
+
+**Every configured field needs its container in the DOM.** `mount()` retries briefly to absorb a late render — 3 attempts over roughly 60 ms — and then rejects with `MOUNT_COLLECT_ERROR` if a container is still missing. It never resolves having mounted only some of the fields, and any field it did mount in a failed call is unmounted before the rejection, so a retry starts clean.
+
+On a client-side route change, call `mount()` after your router has committed the DOM — see [Component lifecycle](#component-lifecycle).
 
 #### Request
 
@@ -758,17 +1042,19 @@ Promise<void>;
 
 #### Throws
 
-| Code                       | When                                                     |
-| -------------------------- | -------------------------------------------------------- |
-| `NOT_INITIALIZED`          | `tonder.init()` has not completed.                       |
-| `SECURE_FIELDS_LOAD_ERROR` | Secure card fields could not load in the browser.        |
-| `VAULT_TOKEN_ERROR`        | Tonder could not prepare the secure card fields session. |
-| `INVALID_VAULT_TOKEN`      | Tonder returned an invalid secure card fields session.   |
-| `MOUNT_COLLECT_ERROR`      | A configured field cannot be mounted.                    |
+| Code                       | When                                                                                                                                                                                           |
+| -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `NOT_INITIALIZED`          | `tonder.init()` has not completed.                                                                                                                                                             |
+| `SECURE_FIELDS_LOAD_ERROR` | Secure card fields could not load in the browser.                                                                                                                                              |
+| `VAULT_TOKEN_ERROR`        | Tonder could not prepare the secure card fields session.                                                                                                                                       |
+| `INVALID_VAULT_TOKEN`      | Tonder returned an invalid secure card fields session.                                                                                                                                         |
+| `MOUNT_COLLECT_ERROR`      | A configured field cannot be mounted — most often its container is still absent from the DOM after the ~60 ms retry budget. Read `error.originalError` to find out which selector was missing. |
 
 ### `card_fields.unmount()`
 
 Unmounts this component's secure card fields.
+
+Skip it on a client-side route change and the secure iframes stay attached to a container your next `mount()` will replace — see [Component lifecycle](#component-lifecycle).
 
 #### Request
 
@@ -1118,6 +1404,8 @@ Promise<void>;
 Lists active payment methods configured for your business. Can be called before `init()`.
 
 This method is for discovery/rendering only. It is not required before `pay()`: you may pass a known enabled method code directly, such as `payment_method: { type: 'spei' }` or `payment_method: { type: 'oxxopay' }`.
+
+Apple Pay is never returned here, even when it is enabled for your business. Apple Pay cannot be charged through `pay()` — it is offered through its own SDK-rendered button, see [Apple Pay](#apple-pay) — so listing it as a selectable option would offer your shoppers a method that always fails.
 
 #### Request
 

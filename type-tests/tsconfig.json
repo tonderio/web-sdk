@@ -1,0 +1,33 @@
+{
+  // Compiles `merchant-usage.ts` the way a MERCHANT compiles it: against the
+  // built `dist/index.d.ts` reached through the package name, not against
+  // `src/`. Nothing else in this repository does that, which is why a type that
+  // was declared in the published `.d.ts` but never exported from it could sit
+  // on a public signature undetected — `tsc -p .` and `tsconfig.test.json` both
+  // resolve `src/` directly and never consult the package entry point.
+  //
+  // Runs from `postbuild` (see `typecheck:public`) rather than from
+  // `npm run typecheck`, because it needs `dist/index.d.ts` to exist. Adding it
+  // to `typecheck` would fail on a clean checkout that has not built yet.
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": ".",
+    "declaration": false,
+    "declarationMap": false,
+    "sourceMap": false,
+    // NOT inherited from the root config, which sets it true. A merchant
+    // type-checks our published declarations for real, so this project does
+    // too: it is the only place in the repository where `dist/index.d.ts` is
+    // checked rather than skipped.
+    "skipLibCheck": false,
+    // Resolve the package name to the published declarations, exactly as a
+    // merchant's `node_modules` would after `npm install @tonder.io/web-sdk`.
+    "baseUrl": ".",
+    "paths": {
+      "@tonder.io/web-sdk": ["../dist/index.d.ts"]
+    }
+  },
+  "include": ["**/*.ts"],
+  "exclude": ["node_modules"]
+}

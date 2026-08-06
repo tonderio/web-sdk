@@ -7,16 +7,9 @@ import { ErrorKeyEnum } from '../../shared/errors/ErrorKeyEnum';
  * that touches the global `fetch`. Generic transport — it carries no domain
  * knowledge of any specific endpoint.
  *
- * Behavior:
- *   - URL = `${baseUrl}${path}`.
- *   - Default headers: `Authorization: Token <apiKey>` + `Content-Type:
- *     application/json`. Per-request headers override defaults.
- *   - JSON body is serialized; the response is parsed as JSON with a text
- *     fallback for empty/non-JSON payloads.
- *   - Non-2xx → `AppError(REQUEST_FAILED)` with the response `statusCode` and
- *     the parsed body in `details`.
- *   - `AbortError` → `AppError(REQUEST_ABORTED)`.
- *   - Any other (network) error → `AppError(REQUEST_FAILED)`.
+ * Per-request headers override the defaults. Responses parse as JSON with a
+ * text fallback. Non-2xx and network errors become `AppError(REQUEST_FAILED)`;
+ * an `AbortError` becomes `AppError(REQUEST_ABORTED)`.
  */
 export class FetchHttpClient implements HttpPort {
   private readonly baseUrl: string;
@@ -61,10 +54,13 @@ export class FetchHttpClient implements HttpPort {
     const parsedBody = await FetchHttpClient.parseBody(response);
 
     if (!response.ok) {
+      // The parsed error body is deliberately NOT carried onto the error: it is
+      // backend-shaped — stack traces, internal service names, database
+      // constraints — and this error is merchant-facing. `status_code` is the
+      // one piece of the response that crosses.
       throw new AppError({
         errorCode: ErrorKeyEnum.REQUEST_FAILED,
         status_code: response.status,
-        details: { body: parsedBody },
       });
     }
 
