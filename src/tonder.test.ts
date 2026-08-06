@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { createTonder, _createTonderWithDeps } from './tonder';
 import { AppError } from './shared/errors/AppError';
 import { ErrorKeyEnum } from './shared/errors/ErrorKeyEnum';
-import type { HttpPort } from './ports/http.port';
+import { mockHttpPort } from './test-support/http.mock';
 import type { TokenizerPort } from './ports/tokenizer.port';
 import type { BusinessConfig } from './models/business.model';
 import type { TonderConfig } from './shared/types';
@@ -10,7 +10,6 @@ import type { TonderConfig } from './shared/types';
 const CONFIG: TonderConfig = {
   api_key: 'pk_test_123',
   environment: 'sandbox',
-  return_url: 'https://merchant.example/return',
 };
 
 function makeBusinessConfig(): BusinessConfig {
@@ -24,7 +23,7 @@ function makeBusinessConfig(): BusinessConfig {
       full_logo_url: 'https://acme.test/logo.png',
       background_color: '#fff',
       primary_color: '#000',
-      checkout_environment: true,
+      checkout_mode: true,
       textCheckoutColor: '#111',
       textDetailsColor: '#222',
       checkout_logo: 'checkout.png',
@@ -40,12 +39,9 @@ function makeBusinessConfig(): BusinessConfig {
   };
 }
 
-function mockHttp(impl: HttpPort['request']): {
-  http: HttpPort;
-  spy: ReturnType<typeof vi.fn>;
-} {
-  const spy = vi.fn(impl);
-  return { http: { request: spy }, spy };
+/** Every path the mock was asked for, in call order. */
+function requestedPaths(spy: ReturnType<typeof vi.fn>): string[] {
+  return spy.mock.calls.map((call) => (call[0] as { path: string }).path);
 }
 
 describe('createTonder', () => {
@@ -71,19 +67,26 @@ describe('createTonder', () => {
 describe('Tonder.init', () => {
   it('fetches the business config and makes ready-guarded operations available', async () => {
     const config = makeBusinessConfig();
-    const { http, spy } = mockHttp(() => Promise.resolve(config));
+    const { http, spy } = mockHttpPort(() => Promise.resolve(config));
     const tokenizer = mockTokenizer();
     const tonder = _createTonderWithDeps({ config: CONFIG, http, tokenizer });
 
     await tonder.init();
     await tonder.create('card_fields', { fields: ['card_number'] }).mount();
 
-    expect(spy).toHaveBeenCalledTimes(1);
+    // EXACTLY ONE request, asserted as the whole recorded list.
+    //
+    // A count-and-path pair is the assertion, never "no request went to
+    // /api/v1/payment_methods": that phrasing stays green if the business
+    // request disappeared too, which is the failure worth catching here.
+    expect(requestedPaths(spy)).toEqual([
+      `/api/v1/payments/business/${CONFIG.api_key}`,
+    ]);
     expect(tokenizer.mount).toHaveBeenCalledWith({ fields: ['card_number'] });
   });
 
   it('throws AppError(INIT_ERROR) and goes to error state when the fetch fails', async () => {
-    const { http } = mockHttp(() =>
+    const { http } = mockHttpPort(() =>
       Promise.reject(
         new AppError({ errorCode: ErrorKeyEnum.FETCH_BUSINESS_ERROR }),
       ),
@@ -97,13 +100,16 @@ describe('Tonder.init', () => {
 
   it('is idempotent: a second init() does not re-fetch', async () => {
     const config = makeBusinessConfig();
-    const { http, spy } = mockHttp(() => Promise.resolve(config));
+    const { http, spy } = mockHttpPort(() => Promise.resolve(config));
     const tonder = _createTonderWithDeps({ config: CONFIG, http });
 
     await tonder.init();
     await tonder.init();
 
-    expect(spy).toHaveBeenCalledTimes(1);
+    // One request in total, not one per call.
+    expect(requestedPaths(spy)).toEqual([
+      `/api/v1/payments/business/${CONFIG.api_key}`,
+    ]);
   });
 
   it('createTonder WITHOUT a customer stays legal: init reaches ready for read-only usage', async () => {
@@ -111,7 +117,7 @@ describe('Tonder.init', () => {
     // getPaymentMethods, getPaymentMethodBanks) need no customer, so init must still
     // reach `ready`. Only pay()/COF ops require a customer.
     const config = makeBusinessConfig();
-    const { http } = mockHttp(() => Promise.resolve(config));
+    const { http } = mockHttpPort(() => Promise.resolve(config));
     const tonder = _createTonderWithDeps({ config: CONFIG, http });
 
     await tonder.init();
@@ -129,7 +135,7 @@ function mockTokenizer(): TokenizerPort & {
 } {
   return {
     mount: vi.fn(() => Promise.resolve()),
-    unmount: vi.fn(),
+    unmount: vi.fn<TokenizerPort['unmount']>(),
     collect: vi.fn(() => Promise.resolve({})),
     reveal: vi.fn(() => Promise.resolve()),
   };
@@ -138,7 +144,7 @@ function mockTokenizer(): TokenizerPort & {
 describe('Tonder card fields (via create handle)', () => {
   it('component.mount before init (not ready) throws AppError(NOT_INITIALIZED)', async () => {
     const tokenizer = mockTokenizer();
-    const { http } = mockHttp(() => Promise.resolve(makeBusinessConfig()));
+    const { http } = mockHttpPort(() => Promise.resolve(makeBusinessConfig()));
     const tonder = _createTonderWithDeps({ config: CONFIG, http, tokenizer });
 
     const component = tonder.create('card_fields', { fields: ['card_number'] });
@@ -150,7 +156,7 @@ describe('Tonder card fields (via create handle)', () => {
 
   it('component.mount after ready delegates to tokenizer.mount', async () => {
     const tokenizer = mockTokenizer();
-    const { http } = mockHttp(() => Promise.resolve(makeBusinessConfig()));
+    const { http } = mockHttpPort(() => Promise.resolve(makeBusinessConfig()));
     const tonder = _createTonderWithDeps({ config: CONFIG, http, tokenizer });
     await tonder.init();
 
@@ -163,7 +169,7 @@ describe('Tonder card fields (via create handle)', () => {
 
   it('component.reveal after ready delegates to tokenizer.reveal', async () => {
     const tokenizer = mockTokenizer();
-    const { http } = mockHttp(() => Promise.resolve(makeBusinessConfig()));
+    const { http } = mockHttpPort(() => Promise.resolve(makeBusinessConfig()));
     const tonder = _createTonderWithDeps({ config: CONFIG, http, tokenizer });
     await tonder.init();
 
@@ -177,7 +183,7 @@ describe('Tonder card fields (via create handle)', () => {
 
   it('component.unmount delegates to tokenizer.unmount with its context key', async () => {
     const tokenizer = mockTokenizer();
-    const { http } = mockHttp(() => Promise.resolve(makeBusinessConfig()));
+    const { http } = mockHttpPort(() => Promise.resolve(makeBusinessConfig()));
     const tonder = _createTonderWithDeps({ config: CONFIG, http, tokenizer });
     await tonder.init();
 

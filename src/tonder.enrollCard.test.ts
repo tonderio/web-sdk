@@ -1,7 +1,8 @@
 import { describe, it, expect, vi } from 'vitest';
 import { _createTonderWithDeps } from './tonder';
 import { ErrorKeyEnum } from './shared/errors/ErrorKeyEnum';
-import type { HttpPort } from './ports/http.port';
+import type { HttpPort, HttpRequestOptions } from './ports/http.port';
+import { asHttpPort } from './test-support/http.mock';
 import type { TokenizerPort } from './ports/tokenizer.port';
 import type { AcquirerPort } from './ports/acquirer.port';
 import type { BusinessConfig } from './models/business.model';
@@ -13,7 +14,6 @@ function config(overrides: Partial<TonderConfig> = {}): TonderConfig {
   return {
     api_key: 'pk_test_123',
     environment: 'sandbox',
-    return_url: 'https://merchant.example/return',
     session: { secure_token: SECURE_TOKEN, ...overrides.session },
     ...overrides,
   };
@@ -86,20 +86,18 @@ function mockHttp(cof: { public_key: string | null } | null): {
       card_bin: '411111',
     }),
   );
-  const http: HttpPort = {
-    request: vi.fn(<T>(options: Parameters<HttpPort['request']>[0]) => {
-      if (options.path === '/api/v1/customer/') {
-        return Promise.resolve({
-          id: 42,
-          auth_token: 'cust_tok_1',
-        } as unknown as T);
-      }
-      if (options.method === 'POST' && options.path.endsWith('/cards/')) {
-        return saveSpy() as Promise<T>;
-      }
-      return Promise.resolve(makeBusinessConfig(cof) as unknown as T);
-    }),
-  };
+  const http: HttpPort = asHttpPort((options: HttpRequestOptions) => {
+    if (options.path === '/api/v1/customer/') {
+      return Promise.resolve({
+        id: 42,
+        auth_token: 'cust_tok_1',
+      });
+    }
+    if (options.method === 'POST' && options.path.endsWith('/cards/')) {
+      return saveSpy();
+    }
+    return Promise.resolve(makeBusinessConfig(cof));
+  });
   return { http, saveSpy };
 }
 

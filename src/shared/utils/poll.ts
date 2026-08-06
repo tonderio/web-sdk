@@ -5,8 +5,8 @@
  * `fetchFn`; the only ambient globals used are `setTimeout`/`clearTimeout`,
  * which keeps it fake-timer friendly (`vi.useFakeTimers()`).
  *
- * Design constraints (so this never clashes with the future payflow
- * CheckoutMessenger):
+ * Design constraints (so this never clashes with the hosted checkout page's
+ * completion messenger):
  * - **Cancelable** via `AbortSignal`.
  * - **Single-resolution** — a `resolved` guard ensures the returned promise
  *   settles exactly once: the FIRST of final-status / timeout / abort wins.

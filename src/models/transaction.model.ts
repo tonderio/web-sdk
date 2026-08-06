@@ -105,6 +105,25 @@ export const DECLINED_FINAL_STATUSES: ReadonlySet<string> = new Set([
 ]);
 
 /**
+ * The transaction statuses that mean the charge went through.
+ *
+ * ONE definition, shared by every caller. `pay()` used to inline
+ * `status !== 'Success' && status !== 'Authorized'`, and the Apple Pay
+ * completion mapping needs the same set to decide between
+ * `completePayment({ status: 'success' })` and `{ status: 'failure' }`. Two
+ * copies of "what success means" is one copy too many, and the second one
+ * would have lived in a file about card fields.
+ *
+ * Case-SENSITIVE, exactly like the comparison it replaces. Unlike
+ * {@link DECLINED_FINAL_STATUSES} this is not lowercased: the backend sends
+ * these two capitalized, and loosening the match here would silently change
+ * which transactions `pay()` treats as successful.
+ */
+export function isSuccessfulStatus(status: string): boolean {
+  return status === 'Success' || status === 'Authorized';
+}
+
+/**
  * Normalize a transport transaction into the public {@link RawTransaction}.
  *
  * The source `raw` is not mutated.

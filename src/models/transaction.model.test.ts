@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   toRawTransaction,
+  isSuccessfulStatus,
   type BackendTransactionResponse,
 } from './transaction.model';
 
@@ -109,5 +110,31 @@ describe('toRawTransaction', () => {
       decline_code: 'do_not_honor',
       decline_reason: 'Issuer declined',
     });
+  });
+});
+
+describe('isSuccessfulStatus', () => {
+  it('is true for the two success statuses', () => {
+    expect(isSuccessfulStatus('Success')).toBe(true);
+    expect(isSuccessfulStatus('Authorized')).toBe(true);
+  });
+
+  it('is false for every other status', () => {
+    for (const status of [
+      'Declined',
+      'Pending',
+      'Failed',
+      'Rejected',
+      'Expired',
+      'Cancelled',
+      '',
+    ]) {
+      expect(isSuccessfulStatus(status)).toBe(false);
+    }
+  });
+
+  it('is case-sensitive, matching the comparison it replaces', () => {
+    expect(isSuccessfulStatus('success')).toBe(false);
+    expect(isSuccessfulStatus('authorized')).toBe(false);
   });
 });

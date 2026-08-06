@@ -96,7 +96,7 @@ and the caller is expected to poll or read it later for the final state.
 Status-value normalization — i.e. which raw status strings mean "paid",
 "declined", or "pending" — is documented in the SDK README as guidance for
 integrators. It is NOT a field the SDK adds to the result and NOT a helper
-function shipped by this change.
+function the SDK ships.
 
 #### Scenario: Frictionless card payment succeeds
 

@@ -4,6 +4,9 @@ export type TonderMode = 'production' | 'sandbox' | 'stage';
 /**
  * Resolved base hosts for a given {@link TonderMode}.
  *
+ * Internal. Not exported from the package entry point: the SDK resolves these
+ * from `TonderConfig.environment` and never accepts or returns them.
+ *
  * Note: secure card-field hosts are resolved at runtime from the business
  * configuration instead of being hardcoded here.
  */

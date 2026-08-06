@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { CardService } from './card.service';
-import type { HttpPort } from '../../ports/http.port';
+import { asHttpPort } from '../../test-support/http.mock';
 import type {
   BackendCardsResponse,
   SaveCardBackendResponse,
@@ -28,10 +28,6 @@ function cardsResponse(): BackendCardsResponse {
       },
     ],
   };
-}
-
-function mockHttp(impl: HttpPort['request']): HttpPort {
-  return { request: vi.fn(impl) };
 }
 
 describe('CardService.getCards', () => {
@@ -68,7 +64,7 @@ describe('CardService.getCards', () => {
   });
 
   it('re-wraps a transport failure as AppError(FETCH_CARDS_ERROR)', async () => {
-    const http = mockHttp(() => Promise.reject(new Error('boom')));
+    const http = asHttpPort(() => Promise.reject(new Error('boom')));
     const service = new CardService(http);
 
     await expect(
@@ -104,7 +100,7 @@ describe('CardService.removeCard', () => {
 
   it('re-wraps a transport failure as AppError(REMOVE_CARD_ERROR)', async () => {
     const inner = new AppError({ errorCode: ErrorKeyEnum.REQUEST_FAILED });
-    const http = mockHttp(() => Promise.reject(inner));
+    const http = asHttpPort(() => Promise.reject(inner));
     const service = new CardService(http);
 
     await expect(
@@ -163,7 +159,7 @@ describe('CardService.saveCard', () => {
   });
 
   it('re-wraps a transport failure as AppError(SAVE_CARD_ERROR)', async () => {
-    const http = mockHttp(() => Promise.reject(new Error('boom')));
+    const http = asHttpPort(() => Promise.reject(new Error('boom')));
     const service = new CardService(http);
 
     await expect(

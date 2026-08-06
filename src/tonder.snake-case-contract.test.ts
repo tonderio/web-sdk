@@ -2,7 +2,8 @@ import { describe, expect, it, vi } from 'vitest';
 import { _createTonderWithDeps } from './tonder';
 import { mapToCard } from './models/card.model';
 import { AppError } from './shared/errors/AppError';
-import type { HttpPort } from './ports/http.port';
+import type { HttpPort, HttpRequestOptions } from './ports/http.port';
+import { asHttpPort } from './test-support/http.mock';
 import type { TokenizerPort } from './ports/tokenizer.port';
 import type { BackendTransactionResponse } from './models/transaction.model';
 import type { BusinessConfig } from './models/business.model';
@@ -18,7 +19,7 @@ function business(): BusinessConfig {
       full_logo_url: 'https://acme.test/logo.png',
       background_color: '#fff',
       primary_color: '#000',
-      checkout_environment: true,
+      checkout_mode: true,
       textCheckoutColor: '#111',
       textDetailsColor: '#222',
       checkout_logo: 'checkout.png',
@@ -66,14 +67,13 @@ function tokenizer(): TokenizerPort {
 
 describe('public snake_case contract', () => {
   it('accepts snake_case createTonder config and pay input, then sends return_url and presentation_mode to /process', async () => {
-    const processSpy = vi.fn(() => Promise.resolve(transaction()));
-    const http: HttpPort = {
-      request: vi.fn(<T>(options: Parameters<HttpPort['request']>[0]) => {
-        if (options.path === '/api/v1/process/')
-          return processSpy(options) as Promise<T>;
-        return Promise.resolve(business() as unknown as T);
-      }),
-    };
+    const processSpy = vi.fn((_options: HttpRequestOptions) =>
+      Promise.resolve(transaction()),
+    );
+    const http: HttpPort = asHttpPort((options: HttpRequestOptions) => {
+      if (options.path === '/api/v1/process/') return processSpy(options);
+      return Promise.resolve(business());
+    });
     const tonder = _createTonderWithDeps({
       config: {
         api_key: 'pk_test_123',
@@ -115,14 +115,13 @@ describe('public snake_case contract', () => {
   });
 
   it('forwards an optional billing_address on pay input to the /process body', async () => {
-    const processSpy = vi.fn(() => Promise.resolve(transaction()));
-    const http: HttpPort = {
-      request: vi.fn(<T>(options: Parameters<HttpPort['request']>[0]) => {
-        if (options.path === '/api/v1/process/')
-          return processSpy(options) as Promise<T>;
-        return Promise.resolve(business() as unknown as T);
-      }),
-    };
+    const processSpy = vi.fn((_options: HttpRequestOptions) =>
+      Promise.resolve(transaction()),
+    );
+    const http: HttpPort = asHttpPort((options: HttpRequestOptions) => {
+      if (options.path === '/api/v1/process/') return processSpy(options);
+      return Promise.resolve(business());
+    });
     const tonder = _createTonderWithDeps({
       config: {
         api_key: 'pk_test_123',
@@ -167,14 +166,13 @@ describe('public snake_case contract', () => {
   });
 
   it('omits billing_address from the /process body when the merchant does not pass it', async () => {
-    const processSpy = vi.fn(() => Promise.resolve(transaction()));
-    const http: HttpPort = {
-      request: vi.fn(<T>(options: Parameters<HttpPort['request']>[0]) => {
-        if (options.path === '/api/v1/process/')
-          return processSpy(options) as Promise<T>;
-        return Promise.resolve(business() as unknown as T);
-      }),
-    };
+    const processSpy = vi.fn((_options: HttpRequestOptions) =>
+      Promise.resolve(transaction()),
+    );
+    const http: HttpPort = asHttpPort((options: HttpRequestOptions) => {
+      if (options.path === '/api/v1/process/') return processSpy(options);
+      return Promise.resolve(business());
+    });
     const tonder = _createTonderWithDeps({
       config: {
         api_key: 'pk_test_123',
@@ -206,13 +204,11 @@ describe('public snake_case contract', () => {
   });
 
   it('returns payment-method discovery objects with payment_method and no payment_method alias', async () => {
-    const http: HttpPort = {
-      request: vi.fn(<T>() =>
-        Promise.resolve([
-          { pk: 7, payment_method: 'oxxopay', priority: 10, category: 'cash' },
-        ] as unknown as T),
-      ),
-    };
+    const http: HttpPort = asHttpPort((_options: HttpRequestOptions) =>
+      Promise.resolve([
+        { pk: 7, payment_method: 'oxxopay', priority: 10, category: 'cash' },
+      ]),
+    );
     const tonder = _createTonderWithDeps({
       config: { api_key: 'pk_test_123', environment: 'sandbox' },
       http,

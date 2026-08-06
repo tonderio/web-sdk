@@ -1,7 +1,8 @@
 import { describe, it, expect, vi } from 'vitest';
 import { _createTonderWithDeps } from './tonder';
 import { ErrorKeyEnum } from './shared/errors/ErrorKeyEnum';
-import type { HttpPort } from './ports/http.port';
+import type { HttpPort, HttpRequestOptions } from './ports/http.port';
+import { asHttpPort } from './test-support/http.mock';
 import type { TokenizerPort } from './ports/tokenizer.port';
 import type { BusinessConfig } from './models/business.model';
 import type { BackendCardsResponse } from './models/card.model';
@@ -10,7 +11,6 @@ import type { TonderConfig } from './shared/types';
 const BASE_CONFIG: TonderConfig = {
   api_key: 'pk_test_123',
   environment: 'sandbox',
-  return_url: 'https://merchant.example/return',
 };
 
 function makeBusinessConfig(
@@ -79,25 +79,21 @@ function mockHttp(
     subscription_id?: string | null;
   } = {},
 ): { http: HttpPort; cardsSpy: ReturnType<typeof vi.fn> } {
-  const cardsSpy = vi.fn(() =>
+  const cardsSpy = vi.fn((_options: HttpRequestOptions) =>
     Promise.resolve(cardsResponse(mockOptions.subscription_id)),
   );
-  const http: HttpPort = {
-    request: vi.fn(<T>(requestOptions: Parameters<HttpPort['request']>[0]) => {
-      if (requestOptions.path === '/api/v1/customer/') {
-        return Promise.resolve({
-          id: 1,
-          auth_token: 'cust_tok_1',
-        } as unknown as T);
-      }
-      if (requestOptions.path.endsWith('/cards/')) {
-        return cardsSpy(requestOptions) as Promise<T>;
-      }
-      return Promise.resolve(
-        makeBusinessConfig(mockOptions.business) as unknown as T,
-      );
-    }),
-  };
+  const http: HttpPort = asHttpPort((requestOptions: HttpRequestOptions) => {
+    if (requestOptions.path === '/api/v1/customer/') {
+      return Promise.resolve({
+        id: 1,
+        auth_token: 'cust_tok_1',
+      });
+    }
+    if (requestOptions.path.endsWith('/cards/')) {
+      return cardsSpy(requestOptions);
+    }
+    return Promise.resolve(makeBusinessConfig(mockOptions.business));
+  });
   return { http, cardsSpy };
 }
 
@@ -227,23 +223,21 @@ describe('Tonder.getCustomerCards', () => {
   });
 
   it('wraps a transport failure as FETCH_CARDS_ERROR', async () => {
-    const cardsSpy = vi.fn(() => Promise.reject(new Error('boom')));
-    const http: HttpPort = {
-      request: vi.fn(<T>(options: Parameters<HttpPort['request']>[0]) => {
-        if (options.path === '/api/v1/customer/') {
-          return Promise.resolve({
-            id: 1,
-            auth_token: 'cust_tok_1',
-          } as unknown as T);
-        }
-        if (options.path.endsWith('/cards/')) {
-          return cardsSpy(options) as Promise<T>;
-        }
-        return Promise.resolve(
-          makeBusinessConfig(options.business) as unknown as T,
-        );
-      }),
-    };
+    const cardsSpy = vi.fn((_options: HttpRequestOptions) =>
+      Promise.reject(new Error('boom')),
+    );
+    const http: HttpPort = asHttpPort((options: HttpRequestOptions) => {
+      if (options.path === '/api/v1/customer/') {
+        return Promise.resolve({
+          id: 1,
+          auth_token: 'cust_tok_1',
+        });
+      }
+      if (options.path.endsWith('/cards/')) {
+        return cardsSpy(options);
+      }
+      return Promise.resolve(makeBusinessConfig());
+    });
     const tonder = await readyWithCustomer(
       { ...BASE_CONFIG, session: { secure_token: 'secure_abc' } },
       http,

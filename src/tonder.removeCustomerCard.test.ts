@@ -1,7 +1,8 @@
 import { describe, it, expect, vi } from 'vitest';
 import { _createTonderWithDeps } from './tonder';
 import { ErrorKeyEnum } from './shared/errors/ErrorKeyEnum';
-import type { HttpPort } from './ports/http.port';
+import type { HttpPort, HttpRequestOptions } from './ports/http.port';
+import { asHttpPort, type RequestImpl } from './test-support/http.mock';
 import type { TokenizerPort } from './ports/tokenizer.port';
 import type { BusinessConfig } from './models/business.model';
 import type { TonderConfig } from './shared/types';
@@ -9,7 +10,6 @@ import type { TonderConfig } from './shared/types';
 const BASE_CONFIG: TonderConfig = {
   api_key: 'pk_test_123',
   environment: 'sandbox',
-  return_url: 'https://merchant.example/return',
 };
 
 const CARD_ID = 'sky_1';
@@ -25,7 +25,7 @@ function makeBusinessConfig(): BusinessConfig {
       full_logo_url: 'https://acme.test/logo.png',
       background_color: '#fff',
       primary_color: '#000',
-      checkout_environment: true,
+      checkout_mode: true,
       textCheckoutColor: '#111',
       textDetailsColor: '#222',
       checkout_logo: 'checkout.png',
@@ -52,24 +52,21 @@ function noopTokenizer(): TokenizerPort {
 
 /** Routes business GET, customer POST, and the card DELETE (HTTP 200 body). */
 function mockHttp(
-  deleteImpl: HttpPort['request'] = () =>
-    Promise.resolve({ message: 'deleted' }),
+  deleteImpl: RequestImpl = () => Promise.resolve({ message: 'deleted' }),
 ): { http: HttpPort; deleteSpy: ReturnType<typeof vi.fn> } {
   const deleteSpy = vi.fn(deleteImpl);
-  const http: HttpPort = {
-    request: vi.fn(<T>(options: Parameters<HttpPort['request']>[0]) => {
-      if (options.path === '/api/v1/customer/') {
-        return Promise.resolve({
-          id: 1,
-          auth_token: 'cust_tok_1',
-        } as unknown as T);
-      }
-      if (options.method === 'DELETE') {
-        return deleteSpy(options) as Promise<T>;
-      }
-      return Promise.resolve(makeBusinessConfig() as unknown as T);
-    }),
-  };
+  const http: HttpPort = asHttpPort((options: HttpRequestOptions) => {
+    if (options.path === '/api/v1/customer/') {
+      return Promise.resolve({
+        id: 1,
+        auth_token: 'cust_tok_1',
+      });
+    }
+    if (options.method === 'DELETE') {
+      return deleteSpy(options);
+    }
+    return Promise.resolve(makeBusinessConfig());
+  });
   return { http, deleteSpy };
 }
 

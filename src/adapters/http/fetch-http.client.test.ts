@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { FetchHttpClient } from './fetch-http.client';
+import { rejectionOf } from '../../test-support/rejection';
 import { AppError } from '../../shared/errors/AppError';
 import { ErrorKeyEnum } from '../../shared/errors/ErrorKeyEnum';
 
@@ -136,12 +137,49 @@ describe('FetchHttpClient', () => {
     fetchMock.mockResolvedValue(jsonResponse({ detail: 'boom' }, 500));
     const client = new FetchHttpClient(BASE, API_KEY);
 
-    const err = await client
-      .request({ method: 'GET', path: '/x' })
-      .catch((e) => e);
+    const err = await rejectionOf(() =>
+      client.request({ method: 'GET', path: '/x' }),
+    );
     expect(err).toBeInstanceOf(AppError);
     expect(err.code).toBe(ErrorKeyEnum.REQUEST_FAILED);
     expect(err.status_code).toBe(500);
+  });
+
+  it('does not carry the error response body onto the merchant-facing error', async () => {
+    // A backend error body routinely contains a stack trace, an internal
+    // service name and a database constraint. None of it may reach a merchant.
+    fetchMock.mockResolvedValue(
+      jsonResponse(
+        {
+          detail: 'Traceback (most recent call last): File "/srv/app/x.py"',
+          service: 'internal-ledger-service',
+          db: 'duplicate key value violates unique constraint "tx_pkey"',
+        },
+        502,
+      ),
+    );
+    const client = new FetchHttpClient(BASE, API_KEY);
+
+    const err = await rejectionOf(() =>
+      client.request({ method: 'GET', path: '/x' }),
+    );
+
+    expect(Object.keys(err.details).sort()).toEqual([
+      'code',
+      'status_code',
+      'system_error',
+    ]);
+    // Whole-object sweep: a future change that reintroduces the body anywhere
+    // reachable — details, originalError, message — fails here.
+    expect(
+      JSON.stringify({
+        details: err.details,
+        originalError: err.originalError,
+        message: err.message,
+      }),
+    ).not.toMatch(/internal-ledger-service|tx_pkey|Traceback/);
+    // The explicit status_code is the part that MUST keep propagating.
+    expect(err.status_code).toBe(502);
   });
 
   it('maps a network rejection to AppError(REQUEST_FAILED)', async () => {
