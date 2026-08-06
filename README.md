@@ -713,6 +713,24 @@ Apple Pay works differently from every other method in this SDK: **the SDK rende
 
 `tonder.pay({ payment_method: { type: 'apple_pay' } })` is rejected on purpose — use the component below.
 
+#### Register your domain with Apple first
+
+Apple will not let a page take an Apple Pay payment until the domain serving that page is registered with Apple under Tonder's merchant identifier. This is a one-time setup step per domain, and it is the most common reason a correct integration fails in production.
+
+Ask Tonder to register the domain. You will receive a verification file to host at:
+
+```
+https://<your-domain>/.well-known/apple-developer-merchantid-domain-association.txt
+```
+
+It must be served over HTTPS from that exact path, byte for byte, before the domain is verified. Three details cost people the most time:
+
+- **Every domain is separate.** Staging, production, and any preview or vanity domain each need their own registration. A subdomain is a different domain.
+- **Some hosts hide dot-directories.** If your platform does not serve `/.well-known/` by default, you have to configure it. Open the URL in a browser and confirm you get the file, not a 404 or your app's HTML.
+- **The domain the shopper sees is the one that matters** — the top-level page, not an iframe or a CDN host.
+
+Until this is done, the sheet opens and then closes, and `events.payment.on_error` reports `APPLE_PAY_VALIDATION_ERROR`.
+
 Apple Pay is only offered when your business has it enabled and the shopper's browser supports it. Check first with `isApplePayAvailable()`, which returns `{ available: true }` or `{ available: false, code, message }`, and render the container only when `available` is `true`. When it is `false`, `code` tells you which of the three conditions failed — log it, because it is the difference between "this browser cannot" and "your account is not enabled".
 
 ```html
@@ -803,6 +821,8 @@ There is no return value to await. Every outcome arrives on `config.events.payme
 `on_completed` means the charge reached a final state — not that it was approved. A decline completed: the attempt got a final answer and the answer was no. Branch on `transaction.status` before you fulfill an order. `on_error` is the other channel: an operational failure where no transaction exists at all.
 
 These callbacks are shared by the whole SDK instance: `pay()` fires them too, so one set of handlers covers every payment method you offer.
+
+Two error codes are specific to this flow and reach you through `on_error` once the sheet is already open: `APPLE_PAY_VALIDATION_ERROR` and `APPLE_PAY_SESSION_ERROR`. Both are listed under [Apple Pay](#apple-pay-1) in the error reference.
 
 ## API reference
 
@@ -1647,6 +1667,15 @@ Use `error.code` for branching. Do not parse `error.message`; messages are for d
 | --------------------- | --------------------------------------------------------------- | --------------------------------------------- | ---------------------------------------------- |
 | `VAULT_TOKEN_ERROR`   | The SDK could not prepare a secure card-fields session.         | `card_fields.mount()`, `card_fields.reveal()` | Verify merchant vault configuration and retry. |
 | `INVALID_VAULT_TOKEN` | Tonder returned an invalid secure card-fields session response. | `card_fields.mount()`, `card_fields.reveal()` | Retry and contact Tonder if it persists.       |
+
+### Apple Pay
+
+The three codes in `apple_pay_button.mount()`'s Throws table are raised before anything is shown. These two arrive later, on `events.payment.on_error`, while the shopper is looking at the payment sheet.
+
+| Code                         | When it happens                                                                                                   | Returned by               | How to fix                                                                                                                                                                       |
+| ---------------------------- | ----------------------------------------------------------------------------------------------------------------- | ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `APPLE_PAY_VALIDATION_ERROR` | Apple would not issue a merchant session for the page's domain. Almost always an unregistered domain — see below. | `events.payment.on_error` | Register the exact domain with Apple and serve the association file from it. Ask Tonder if it persists once the domain is confirmed registered.                                  |
+| `APPLE_PAY_SESSION_ERROR`    | The browser refused to open a payment sheet at all.                                                               | `events.payment.on_error` | Serve the page over HTTPS on the top-level document — not an iframe. If your own code wraps the button's click, do not `await` anything before it; Apple requires the same tick. |
 
 ### Rare or compatibility codes
 
