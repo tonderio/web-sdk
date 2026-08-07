@@ -50,6 +50,14 @@ const DEFAULT_BUTTON_STYLE = 'black';
  *
  * A field the merchant omitted is left OUT of the text entirely, so Apple's own
  * default applies instead of being overridden by ours.
+ *
+ * No `@supports not (-webkit-appearance: -apple-pay-button)` fallback, because
+ * it is unreachable: that appearance ships in Apple Pay on the Web v1, and
+ * `canUseApplePay()` already gates on v3. The hand-drawn fallback in Apple's
+ * CSS guide — the one full of `background-color` and `font-family` — describes
+ * a button you composite yourself, not this control. Lower
+ * APPLE_PAY_JS_VERSION below 2 and the fallback has to be written first.
+ * https://developer.apple.com/documentation/applepayontheweb/apple-pay-on-the-web-version-history
  */
 function buildButtonCss(customization?: ApplePayButtonCustomization): string {
   const declarations = [
@@ -63,8 +71,8 @@ function buildButtonCss(customization?: ApplePayButtonCustomization): string {
     'border: 0',
   ];
 
-  if (customization?.locale) {
-    declarations.push(`-apple-pay-button-locale: ${customization.locale}`);
+  if (customization?.width) {
+    declarations.push(`width: ${customization.width}`);
   }
   if (customization?.height) {
     declarations.push(`height: ${customization.height}`);
@@ -167,6 +175,13 @@ export class BrowserApplePay implements ApplePayPort, ApplePayButtonPort {
     button.type = 'button';
     button.className = BUTTON_CLASS;
     button.setAttribute('aria-label', 'Apple Pay');
+
+    // The label is localized from the element's language. There is no
+    // `-apple-pay-button-locale` property, despite the symmetry with
+    // `-apple-pay-button-type`/`-style` suggesting one.
+    if (options.customization?.locale) {
+      button.lang = options.customization.locale;
+    }
 
     // The listener is owned here so the click never crosses a merchant-visible
     // callback layer, which is how a gesture chain gets broken.

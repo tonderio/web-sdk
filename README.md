@@ -10,23 +10,38 @@ Browser TypeScript SDK for accepting payments with Tonder. It provides secure ca
 
 - [Install](#install)
 - [Before you start](#before-you-start)
-- [Backend secure token endpoint](#backend-secure-token-endpoint)
+- [Public browser configuration](#public-browser-configuration)
 - [Quick start: card payment](#quick-start-card-payment)
 - [Configuration](#configuration)
+  - [Events](#events)
+  - [The config is copied when the instance is created](#the-config-is-copied-when-the-instance-is-created)
+  - [Card field customization](#card-field-customization)
+  - [Apple Pay button customization](#apple-pay-button-customization)
 - [Core concepts](#core-concepts)
+  - [Initialization](#initialization)
+  - [Customer context](#customer-context)
+  - [Card on File (COF)](#card-on-file-cof)
+  - [Presentation mode](#presentation-mode)
   - [Component lifecycle](#component-lifecycle)
+- [Backend secure token endpoint](#backend-secure-token-endpoint)
 - [Payment flows](#payment-flows)
+  - [New card](#new-card)
+  - [Saved card](#saved-card)
+  - [Save a new card](#save-a-new-card)
+  - [Alternative payment methods](#alternative-payment-methods)
+  - [Apple Pay](#apple-pay)
+    - [Register your domain with Apple first](#register-your-domain-with-apple-first)
 - [API reference](#api-reference)
   - [`createTonder(config)`](#createtonderconfig)
   - [`tonder.init()`](#tonderinit)
   - [`tonder.create('card_fields', options?)`](#tondercreatecard_fields-options)
+  - [`card_fields.mount()`](#card_fieldsmount)
+  - [`card_fields.unmount()`](#card_fieldsunmount)
+  - [`card_fields.reveal(input)`](#card_fieldsrevealinput)
   - [`tonder.isApplePayAvailable()`](#tonderisapplepayavailable)
   - [`tonder.create('apple_pay_button', options)`](#tondercreateapple_pay_button-options)
   - [`apple_pay_button.mount()`](#apple_pay_buttonmount)
   - [`apple_pay_button.unmount()`](#apple_pay_buttonunmount)
-  - [`card_fields.mount()`](#card_fieldsmount)
-  - [`card_fields.unmount()`](#card_fieldsunmount)
-  - [`card_fields.reveal(input)`](#card_fieldsrevealinput)
   - [`tonder.pay(input)`](#tonderpayinput)
   - [`tonder.getTransaction(id)`](#tondergettransactionid)
   - [`tonder.enrollCard()`](#tonderenrollcard)
@@ -110,65 +125,6 @@ const tonderPublicConfig = window.__TONDER_CONFIG__;
 
 `currency` is checkout/business data. Keep it in your checkout state or merchant configuration; it does not need to be an environment variable unless your app already manages it that way.
 
-## Backend secure token endpoint
-
-`session.secure_token` is required whenever the SDK needs to create, read, update, or remove stored card records for a customer. In practice, this means:
-
-| SDK operation                                         | Needs `session.secure_token`?                      | Why                                                                                      |
-| ----------------------------------------------------- | -------------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| `tonder.enrollCard()`                                 | Yes                                                | Saves a new card for the customer.                                                       |
-| `tonder.getCustomerCards()`                           | Yes                                                | Lists the customer's saved cards.                                                        |
-| `tonder.removeCustomerCard(card_id)`                  | Yes                                                | Removes a saved card.                                                                    |
-| `tonder.pay()` with `{ type: 'saved_card', card_id }` | Yes                                                | Looks up the saved card and may update it with CVV/Card-on-File data before charging it. |
-| `tonder.pay()` with `{ type: 'card' }`                | Only when Card on File is enabled for the business | Saves the new card and creates/updates the Card-on-File subscription before charging it. |
-
-Create the token on your backend using your Tonder **secret API key**, then return only the short-lived `access` token to the browser. Never expose your secret key in frontend code.
-
-```ts
-// Example backend route. Keep TONDER_SECRET_API_KEY only on your server.
-app.post('/api/tonder/secure-token', async (_req, res) => {
-  const response = await fetch('https://stage.tonder.io/api/secure-token/', {
-    method: 'POST',
-    headers: {
-      Authorization: `Token ${process.env.TONDER_SECRET_API_KEY}`,
-      'Content-Type': 'application/json',
-    },
-  });
-
-  if (!response.ok) {
-    res.status(502).json({ error: 'Unable to create Tonder secure token' });
-    return;
-  }
-
-  const { access } = await response.json();
-  res.json({ secure_token: access });
-});
-```
-
-Use the matching Tonder API host for your environment:
-
-| SDK environment      | Backend token URL                           |
-| -------------------- | ------------------------------------------- |
-| `sandbox` or `stage` | `https://stage.tonder.io/api/secure-token/` |
-| `production`         | `https://app.tonder.io/api/secure-token/`   |
-
-Then pass the value returned by your backend to the SDK:
-
-```ts
-const { secure_token } = await fetch('/api/tonder/secure-token', {
-  method: 'POST',
-}).then((response) => response.json());
-
-const tonder = createTonder({
-  api_key: tonderPublicConfig.api_key,
-  environment: tonderPublicConfig.environment,
-  session: {
-    customer: { email: 'ada@example.com' },
-    secure_token,
-  },
-});
-```
-
 ## Quick start: card payment
 
 ### 1. Add containers for card fields
@@ -242,6 +198,8 @@ card_fields.unmount();
 
 Whether that final `unmount()` is optional or required depends on how your checkout navigates — see [Component lifecycle](#component-lifecycle).
 
+**If this throws `SECURE_TOKEN_REQUIRED`, your business has Card on File enabled.** A one-time card payment needs no `session.secure_token`, but when Card on File is on for your business the SDK stores the card as part of the charge, and storing a card always needs one. It is an account setting rather than something in your code, so the same snippet works for one business and fails for another. Add the token — [Backend secure token endpoint](#backend-secure-token-endpoint) — and it applies to every flow you build afterwards.
+
 ## Configuration
 
 `createTonder(config)` creates one SDK instance for one shopper/session. Recreate the SDK if the customer, `secure_token`, or environment changes.
@@ -288,37 +246,44 @@ const tonder = createTonder({
 });
 ```
 
-| Field                          | Required                               | Description                                                                            |
-| ------------------------------ | -------------------------------------- | -------------------------------------------------------------------------------------- |
-| `api_key`                      | Yes                                    | Public Tonder key for browser integrations.                                            |
-| `environment`                  | Yes                                    | `'sandbox'`, `'stage'`, or `'production'`.                                             |
-| `session.customer`             | For `pay()` and saved-card operations  | Customer identity. Omit for read-only return pages that only call `getTransaction()`.  |
-| `session.secure_token`         | For saved-card/Card-on-File operations | Short-lived token minted by your backend using your Tonder secret API key.             |
-| `presentation_mode`            | No                                     | `'redirect'` by default, or `'embedded'` for SDK-owned modal presentation.             |
-| `events.presentation.on_open`  | No                                     | Called when an embedded hosted-payment view opens.                                     |
-| `events.presentation.on_close` | No                                     | Called when the shopper closes a closable embedded hosted-payment view.                |
-| `customization.card_fields`    | No                                     | Labels, placeholders, styles, and validation-message overrides for secure card fields. |
+| Field                            | Required                               | Description                                                                                                    |
+| -------------------------------- | -------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `api_key`                        | Yes                                    | Public Tonder key for browser integrations.                                                                    |
+| `environment`                    | Yes                                    | `'sandbox'`, `'stage'`, or `'production'`.                                                                     |
+| `session.customer`               | For `pay()` and saved-card operations  | Customer identity. Omit for read-only return pages that only call `getTransaction()`.                          |
+| `session.secure_token`           | For saved-card/Card-on-File operations | Short-lived token minted by your backend. See [Backend secure token endpoint](#backend-secure-token-endpoint). |
+| `presentation_mode`              | No                                     | `'redirect'` by default, or `'embedded'` for SDK-owned modal presentation.                                     |
+| `events.payment`                 | No                                     | Payment-result callbacks. See below.                                                                           |
+| `events.presentation`            | No                                     | Hosted-view callbacks. See below.                                                                              |
+| `customization.card_fields`      | No                                     | Labels, placeholders, styles, and validation-message overrides for secure card fields.                         |
+| `customization.apple_pay_button` | No                                     | Type, style, locale, height, and corner radius for the SDK-rendered Apple Pay button.                          |
 
-#### A callback of yours that throws cannot change a payment
+### Events
 
-Every callback you hand the SDK — `events.presentation`, `events.payment`, and the per-field `events` on `create('card_fields', ...)` — is invoked in isolation. If one throws, the SDK reports it through `console.warn` and carries on: the `pay()` promise still resolves with the same transaction it would have resolved with, and the SDK's own work after the callback still runs. A broken analytics line in `on_open` cannot turn a completed charge into a rejected promise you would be tempted to retry.
+`events.payment` fires for **every** payment the SDK completes — `pay()` and the Apple Pay button alike. One set of handlers covers every method you offer. For `pay()` these callbacks run alongside the returned promise rather than replacing it; for Apple Pay there is no promise, so they are the only channel.
 
-#### The config is copied when the instance is created
+| Callback                                   | When                                                                                        |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------- |
+| `events.payment.on_completed(transaction)` | The charge reached a final state — **including a decline**. Branch on `transaction.status`. |
+| `events.payment.on_error(error)`           | The charge failed operationally and no transaction exists.                                  |
+| `events.payment.on_cancel()`               | The shopper dismissed the payment sheet.                                                    |
 
-The SDK takes its own copy of the object you pass to `createTonder()`. Keeping a reference and writing to it afterwards changes nothing the SDK sends — the write is ignored, not rejected, so nothing throws. To switch customer, refresh an expired `secure_token`, or change environment, create a new instance.
+`events.presentation` fires for the SDK's own hosted views, and only in `presentation_mode: 'embedded'`.
 
-`events` is the one exception and stays live: see [Results](#results).
+| Callback                         | When                                                                                                                    |
+| -------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `events.presentation.on_open()`  | An embedded hosted-payment view has mounted.                                                                            |
+| `events.presentation.on_close()` | The shopper closed a closable embedded view. Not called for card 3DS, which is non-closable, nor on programmatic close. |
 
-| Field                            | After `createTonder()`               |
-| -------------------------------- | ------------------------------------ |
-| `events`                         | Live — read when each callback fires |
-| `session.customer`               | Fixed at creation                    |
-| `session.secure_token`           | Fixed at creation                    |
-| `presentation_mode`              | Fixed at creation                    |
-| `customization.card_fields`      | Fixed at creation                    |
-| `customization.apple_pay_button` | Fixed at creation                    |
+`on_completed` meaning "final", not "paid", is the distinction that costs the most: a checkout that fulfills on every `on_completed` call ships declines as completed orders.
 
-`presentation_mode` and `customization.apple_pay_button` were previously read at use time as a side effect of the SDK sharing your object. That was never documented behavior, and it no longer happens — set both at creation.
+**A callback of yours that throws cannot change a payment.** Every callback you hand the SDK — `events.payment`, `events.presentation`, and the per-field `events` on `create('card_fields', ...)` — runs in isolation. If one throws, the SDK reports it through `console.warn` and carries on: the `pay()` promise still resolves with the same transaction, and the SDK's own work after the callback still runs. A broken analytics line cannot turn a completed charge into a rejected promise you would be tempted to retry.
+
+### The config is copied when the instance is created
+
+The SDK takes its own copy of the object you pass to `createTonder()`. Everything in it is fixed from that point on: keeping a reference and writing to it afterwards changes nothing the SDK sends. The write is ignored, not rejected, so nothing throws to tell you it had no effect.
+
+To switch customer, refresh an expired `secure_token`, change environment, or change any other setting, create a new instance.
 
 ### Card field customization
 
@@ -473,6 +438,70 @@ const tonder = createTonder({
 });
 ```
 
+### Apple Pay button customization
+
+The Apple Pay button is not styled like the rest of your checkout. Safari draws it natively, and Apple allows exactly four things to be changed: **its call to action, its color, its size, and its corner radius.** Nothing else reaches it — not `background-color`, not `color`, not `font-family`, not a logo of your own.
+
+Those four are what `customization.apple_pay_button` exposes, plus the label's language. Set them in `createTonder()`; all are optional.
+
+```ts
+customization: {
+  apple_pay_button: {
+    type: 'check-out',
+    style: 'white-outline',
+    locale: 'es-MX',
+    width: '100%',
+    height: '48px',
+    border_radius: '8px',
+  },
+}
+```
+
+#### `customization.apple_pay_button`
+
+| Field           | Type     | Default             | Description                                                                         |
+| --------------- | -------- | ------------------- | ----------------------------------------------------------------------------------- |
+| `type`          | `string` | `buy`               | The button's call to action. See [Button types](#button-types).                     |
+| `style`         | `string` | `black`             | `black`, `white`, or `white-outline`.                                               |
+| `locale`        | `string` | the page's language | BCP 47 language tag for the label, for example `es-MX`.                             |
+| `width`         | `string` | Apple's width       | Any CSS length. See [Sizing](#sizing).                                              |
+| `height`        | `string` | Apple's height      | Any CSS length, for example `48px`. See [Sizing](#sizing).                          |
+| `border_radius` | `string` | `4pt`               | A single CSS length. `0` gives square corners; a large value gives a capsule shape. |
+
+`border_radius` takes one value only. Apple's button has a single corner radius, so if several are supplied it applies the largest to all four corners.
+
+#### Button types
+
+Apple added these over successive Apple Pay on the Web versions. If the shopper's Safari does not recognize the value, Apple substitutes the plain button rather than failing, so a newer type degrades instead of breaking.
+
+| Introduced in | Values                                                                           |
+| ------------- | -------------------------------------------------------------------------------- |
+| Version 2     | `buy`, `donate`, `plain`, `set-up`                                               |
+| Version 4     | `book`, `check-out`, `subscribe`                                                 |
+| Version 10    | `add-money`, `contribute`, `order`, `reload`, `rent`, `support`, `tip`, `top-up` |
+| Version 12    | `continue`                                                                       |
+
+`plain` shows the Apple Pay mark alone. Every other type prepends a call to action, for example "Check out with Pay".
+
+#### Sizing
+
+`width` and `height` accept any CSS length, but Apple enforces a floor:
+
+| Button                           | Minimum width | Minimum height |
+| -------------------------------- | ------------- | -------------- |
+| `plain`                          | 100pt         | 30pt           |
+| Every type with a call to action | 140pt         | 30pt           |
+
+Apple states these in points. A percentage width such as `100%` resolves against your container, so it is you who has to keep the result above the floor — a full-width button inside a narrow column can fall under 140pt without your CSS ever naming a small number.
+
+Apple also asks for clear space around the button of at least 1/10 of its height. Leave that room in your own layout — it is the container's margin, not a button property.
+
+**`width` and `locale` interact.** If the width you choose cannot fit the label once Apple translates it, Apple replaces your button with the plain one, silently. A width that fits "Check out with Pay" in English may not fit its Spanish translation, so check any narrow button in every locale you ship.
+
+#### The logo cannot be replaced
+
+There is no image, icon, or logo option, and this is not an SDK limitation. The button is drawn by the browser through `-webkit-appearance: -apple-pay-button` rather than an `<img>`, so the Apple Pay mark comes from WebKit itself. Apple's Human Interface Guidelines require the unmodified mark, and custom artwork is grounds for rejection when you register your domain. Use `type` to change what the button says.
+
 ## Core concepts
 
 ### Initialization
@@ -495,16 +524,16 @@ const transaction = await tonder.getTransaction('txn_123');
 
 ### Card on File (COF)
 
-Card on File (COF) lets a business save a shopper's card and charge it later through a processor-backed subscription/authorization. Ask the Tonder team whether COF is enabled for your business before building saved-card flows.
+**Read `subscription_id` on every saved card before charging it.** It decides whether you need to collect a CVV:
 
-When COF is enabled, saved cards may include `subscription_id`. Cards with `subscription_id` can be charged directly as saved cards. Cards without `subscription_id` require CVV collection so the SDK can save/update the card and create the subscription before processing the payment. In both saved-card cases, `pay({ payment_method: { type: 'saved_card' } })` still needs `session.secure_token` because the SDK must read the customer's saved-card record before deciding which path to use.
+| `subscription_id` | What to do before `pay()`                                                                         |
+| ----------------- | ------------------------------------------------------------------------------------------------- |
+| present           | Nothing. Charge the card directly.                                                                |
+| `null`            | Mount the saved-card CVV field. The SDK uses it to create the subscription as part of the charge. |
 
-Because those operations create, list, update, or remove stored card records, they require both:
+Card on File is what makes that field appear: it lets a business store a shopper's card and charge it later through a processor-backed subscription. Ask the Tonder team whether it is enabled for your business before building saved-card flows — when it is off, `subscription_id` is always `null`.
 
-- `session.customer`
-- `session.secure_token`
-
-For new-card payments, `session.secure_token` is only required when the SDK must perform Card-on-File setup as part of the payment flow. Plain one-time new-card payments do not require it.
+Which operations need `session.secure_token`, and why, is listed once in [Backend secure token endpoint](#backend-secure-token-endpoint).
 
 ### Presentation mode
 
@@ -584,6 +613,65 @@ useEffect(() => {
 ```
 
 The `cancelled` flag is not optional decoration. `init()` and `mount()` are async, so a shopper who leaves quickly can make them resolve after your component is already gone — without the flag you would mount into a container that no longer exists.
+
+## Backend secure token endpoint
+
+`session.secure_token` is required whenever the SDK needs to create, read, update, or remove stored card records for a customer. In practice, this means:
+
+| SDK operation                                         | Needs `session.secure_token`?                      | Why                                                                                      |
+| ----------------------------------------------------- | -------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| `tonder.enrollCard()`                                 | Yes                                                | Saves a new card for the customer.                                                       |
+| `tonder.getCustomerCards()`                           | Yes                                                | Lists the customer's saved cards.                                                        |
+| `tonder.removeCustomerCard(card_id)`                  | Yes                                                | Removes a saved card.                                                                    |
+| `tonder.pay()` with `{ type: 'saved_card', card_id }` | Yes                                                | Looks up the saved card and may update it with CVV/Card-on-File data before charging it. |
+| `tonder.pay()` with `{ type: 'card' }`                | Only when Card on File is enabled for the business | Saves the new card and creates/updates the Card-on-File subscription before charging it. |
+
+Create the token on your backend using your Tonder **secret API key**, then return only the short-lived `access` token to the browser. Never expose your secret key in frontend code.
+
+```ts
+// Example backend route. Keep TONDER_SECRET_API_KEY only on your server.
+app.post('/api/tonder/secure-token', async (_req, res) => {
+  const response = await fetch('https://stage.tonder.io/api/secure-token/', {
+    method: 'POST',
+    headers: {
+      Authorization: `Token ${process.env.TONDER_SECRET_API_KEY}`,
+      'Content-Type': 'application/json',
+    },
+  });
+
+  if (!response.ok) {
+    res.status(502).json({ error: 'Unable to create Tonder secure token' });
+    return;
+  }
+
+  const { access } = await response.json();
+  res.json({ secure_token: access });
+});
+```
+
+Use the matching Tonder API host for your environment:
+
+| SDK environment      | Backend token URL                           |
+| -------------------- | ------------------------------------------- |
+| `sandbox` or `stage` | `https://stage.tonder.io/api/secure-token/` |
+| `production`         | `https://app.tonder.io/api/secure-token/`   |
+
+Then pass the value returned by your backend to the SDK:
+
+```ts
+const { secure_token } = await fetch('/api/tonder/secure-token', {
+  method: 'POST',
+}).then((response) => response.json());
+
+const tonder = createTonder({
+  api_key: tonderPublicConfig.api_key,
+  environment: tonderPublicConfig.environment,
+  session: {
+    customer: { email: 'ada@example.com' },
+    secure_token,
+  },
+});
+```
 
 ## Payment flows
 
@@ -717,19 +805,41 @@ Apple Pay works differently from every other method in this SDK: **the SDK rende
 
 Apple will not let a page take an Apple Pay payment until the domain serving that page is registered with Apple under Tonder's merchant identifier. This is a one-time setup step per domain, and it is the most common reason a correct integration fails in production.
 
-Ask Tonder to register the domain. You will receive a verification file to host at:
+It takes four steps, in this order:
 
-```
-https://<your-domain>/.well-known/apple-developer-merchantid-domain-association.txt
-```
+1. **Send Tonder every domain** that will show the Apple Pay button. Subdomains count separately — `checkout.yourstore.com` and `yourstore.com` are two registrations.
+2. **Tonder registers each domain** and sends you a verification file. Tonder generates its contents; you do not create it.
+3. **Host the file** on that domain, over HTTPS, under `/.well-known/`:
 
-It must be served over HTTPS from that exact path, byte for byte, before the domain is verified. Three details cost people the most time:
+   ```
+   https://<your-domain>/.well-known/<the file Tonder sent you>
+   ```
 
-- **Every domain is separate.** Staging, production, and any preview or vanity domain each need their own registration. A subdomain is a different domain.
-- **Some hosts hide dot-directories.** If your platform does not serve `/.well-known/` by default, you have to configure it. Open the URL in a browser and confirm you get the file, not a 404 or your app's HTML.
+   Keep the filename Tonder gave you, exactly. Do not rename it, do not re-save it, do not open it in an editor — its contents are matched byte for byte, and Apple fetches the exact name that was registered.
+
+4. **Tell Tonder it is live.** Tonder completes the verification with Apple and enables Apple Pay for that domain.
+
+Requirements for the response at that URL:
+
+| Requirement    | Detail                                                                                                                                                                                                                                                                                    |
+| -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Protocol       | HTTPS, publicly reachable.                                                                                                                                                                                                                                                                |
+| Redirects      | None. Apple states the domain cannot sit behind a proxy or a redirect — the URL has to serve the file itself.                                                                                                                                                                             |
+| Reachability   | Apple fetches this file from **your** server, so Apple's own IPs have to get through. If a WAF, firewall, CDN rule, or geo-block sits in front of your domain, allowlist the IP ranges Apple publishes for domain verification. Only you can do this — Tonder is not in the request path. |
+| Authentication | None. No login, no token.                                                                                                                                                                                                                                                                 |
+| `Content-Type` | `text/plain`, or none at all. Both work.                                                                                                                                                                                                                                                  |
+
+Three details cost people the most time:
+
+- **Every domain is separate.** Staging, production, and any preview or vanity domain each need their own registration.
+- **Some hosts hide dot-directories.** If your platform does not serve `/.well-known/` by default, you have to configure it.
 - **The domain the shopper sees is the one that matters** — the top-level page, not an iframe or a CDN host.
 
-Until this is done, the sheet opens and then closes, and `events.payment.on_error` reports `APPLE_PAY_VALIDATION_ERROR`.
+Before telling Tonder the file is live, open the URL yourself and check the response **body**, not just the status code. A single-page app with a catch-all route answers `200` with `index.html` for unknown paths, so the URL looks healthy while serving the wrong bytes.
+
+Until the domain is verified, the sheet opens and then closes, and `events.payment.on_error` reports `APPLE_PAY_VALIDATION_ERROR`.
+
+**Registering the domain and enabling Apple Pay on your account are two different steps**, and they fail differently. A verified domain with Apple Pay not yet enabled means `isApplePayAvailable()` returns `APPLE_PAY_NOT_ENABLED` and no button ever renders. An enabled account on an unregistered domain means the button renders, the sheet opens, and then it closes with `APPLE_PAY_VALIDATION_ERROR`. Ask Tonder to confirm both.
 
 Apple Pay is only offered when your business has it enabled and the shopper's browser supports it. Check first with `isApplePayAvailable()`, which returns `{ available: true }` or `{ available: false, code, message }`, and render the container only when `available` is `true`. When it is `false`, `code` tells you which of the three conditions failed — log it, because it is the difference between "this browser cannot" and "your account is not enabled".
 
@@ -739,8 +849,8 @@ Apple Pay is only offered when your business has it enabled and the shopper's br
 
 ```ts
 const tonder = createTonder({
-  api_key: 'pk_test_123',
-  environment: 'sandbox',
+  api_key: tonderPublicConfig.api_key,
+  environment: tonderPublicConfig.environment,
   session: { customer: { email: 'ada@example.com' } },
   events: {
     payment: {
@@ -810,7 +920,7 @@ If you need server-side data to build the charge, fetch it before the shopper cl
 
 #### Results
 
-There is no return value to await. Every outcome arrives on `config.events.payment`, which you can also assign after `createTonder()` — including when your original config had no `events` key at all. `events` is read at the moment each callback fires, so it stays live even though the rest of the config is copied at creation:
+There is no return value to await. Every outcome arrives on the `events.payment` callbacks you set at `createTonder()`:
 
 | Outcome                               | Callback                    |
 | ------------------------------------- | --------------------------- |
@@ -822,7 +932,7 @@ There is no return value to await. Every outcome arrives on `config.events.payme
 
 These callbacks are shared by the whole SDK instance: `pay()` fires them too, so one set of handlers covers every payment method you offer.
 
-Two error codes are specific to this flow and reach you through `on_error` once the sheet is already open: `APPLE_PAY_VALIDATION_ERROR` and `APPLE_PAY_SESSION_ERROR`. Both are listed under [Apple Pay](#apple-pay-1) in the error reference.
+Two error codes are specific to this flow and reach you through `on_error` once the sheet is already open: `APPLE_PAY_VALIDATION_ERROR` and `APPLE_PAY_SESSION_ERROR`. Both are listed under [Apple Pay errors](#apple-pay-errors) in the error reference.
 
 ## API reference
 
@@ -849,6 +959,11 @@ interface TonderConfig {
   };
   presentation_mode?: 'redirect' | 'embedded';
   events?: {
+    payment?: {
+      on_completed?(transaction: RawTransaction): void;
+      on_error?(error: AppError): void;
+      on_cancel?(): void;
+    };
     presentation?: {
       on_open?(): void;
       on_close?(): void;
@@ -857,6 +972,8 @@ interface TonderConfig {
   customization?: TonderCustomization;
 }
 ```
+
+`events.payment` fires for every payment method, `pay()` included — see [Events](#events).
 
 #### Response
 
@@ -948,98 +1065,6 @@ interface CardFieldsComponent {
 | ------------------------ | ------------------------------------------ |
 | `INVALID_COMPONENT_TYPE` | The first argument is not `'card_fields'`. |
 
-### `tonder.isApplePayAvailable()`
-
-Tells you whether to render the Apple Pay container, and why not when you should not. Synchronous, makes no network call, and never throws — including before `init()`.
-
-#### Response
-
-```ts
-type ApplePayAvailability =
-  | { available: true }
-  | { available: false; code: string; message: string };
-```
-
-`available` is the discriminant: check it first and TypeScript narrows `code` and `message` into existence.
-
-| `code`                          | Meaning                                     |
-| ------------------------------- | ------------------------------------------- |
-| `NOT_INITIALIZED`               | `init()` has not finished yet.              |
-| `APPLE_PAY_UNSUPPORTED_BROWSER` | This browser cannot run Apple Pay.          |
-| `APPLE_PAY_NOT_ENABLED`         | Apple Pay is not enabled for your business. |
-
-The codes and messages are the same ones `mount()` throws for the same conditions, and when more than one applies you get the one `mount()` would report first — in the order listed above.
-
-#### What `available: true` does and does not promise
-
-It means the browser exposes Apple Pay **and** your business has it enabled. It does **not** promise the payment sheet will open: no synchronous check can. In the iOS Simulator, for example, the browser reports it can make payments, the button renders, and Apple dismisses the sheet the moment it is tapped. Treat `true` as "render the button" and handle what happens after the tap through `config.events.payment`.
-
-```ts
-const availability = tonder.isApplePayAvailable();
-
-if (availability.available) {
-  await tonder.create('apple_pay_button', { payment }).mount();
-} else {
-  console.info('Apple Pay hidden:', availability.code, availability.message);
-}
-```
-
-### `tonder.create('apple_pay_button', options)`
-
-Creates the Apple Pay button component. The SDK renders the button and handles the click; call `mount()` to render it. Results arrive on `config.events.payment`, not as a return value.
-
-#### Request
-
-```ts
-interface ApplePayButtonOptions {
-  /** Container selector. Defaults to '#tonder-apple-pay-button'. */
-  container_id?: string;
-  /**
-   * Payment data for the charge. Pass an object for a fixed amount, or a
-   * SYNCHRONOUS function for a cart that can change after mount.
-   */
-  payment: ApplePayPaymentInput | (() => ApplePayPaymentInput);
-}
-```
-
-`ApplePayPaymentInput` accepts `amount`, `currency`, `return_url`, `client_reference`, `metadata`, `billing_address` and `idempotency_key` — every field `pay()` takes, and each one is sent on the charge. The single field it does not accept is `payment_method`, because the button already is one.
-
-Style the button through `customization.apple_pay_button` on `createTonder()`.
-
-#### Response
-
-```ts
-interface ApplePayButtonComponent {
-  mount(): Promise<void>;
-  unmount(): void;
-}
-```
-
-#### Throws
-
-| Code                      | When                          |
-| ------------------------- | ----------------------------- |
-| `INVALID_PAYMENT_REQUEST` | `options.payment` is missing. |
-
-### `apple_pay_button.mount()`
-
-Renders the Apple Pay button into `container_id`. Calling it again replaces the rendered button.
-
-#### Throws
-
-| Code                            | When                                           |
-| ------------------------------- | ---------------------------------------------- |
-| `NOT_INITIALIZED`               | `init()` has not completed.                    |
-| `APPLE_PAY_UNSUPPORTED_BROWSER` | This browser cannot run Apple Pay.             |
-| `APPLE_PAY_NOT_ENABLED`         | Apple Pay is not enabled for your business.    |
-| `APPLE_PAY_CONTAINER_NOT_FOUND` | No element on the page matches `container_id`. |
-
-### `apple_pay_button.unmount()`
-
-Removes the button and dismisses the payment sheet if one is open. Safe to call more than once.
-
-Skip it on a client-side route change and the open sheet can still be authorized, charging with the payment data captured before you navigated away — see [Component lifecycle](#component-lifecycle).
-
 ### `card_fields.mount()`
 
 Mounts secure card fields into the configured containers.
@@ -1128,6 +1153,98 @@ Promise<void>;
 | `SECURE_FIELDS_LOAD_ERROR` | Secure card fields could not load in the browser.                            |
 | `VAULT_TOKEN_ERROR`        | Tonder could not prepare the secure card fields session.                     |
 | `INVALID_VAULT_TOKEN`      | Tonder returned an invalid secure card fields session.                       |
+
+### `tonder.isApplePayAvailable()`
+
+Tells you whether to render the Apple Pay container, and why not when you should not. Synchronous, makes no network call, and never throws — including before `init()`.
+
+#### Response
+
+```ts
+type ApplePayAvailability =
+  | { available: true }
+  | { available: false; code: string; message: string };
+```
+
+`available` is the discriminant: check it first and TypeScript narrows `code` and `message` into existence.
+
+| `code`                          | Meaning                                     |
+| ------------------------------- | ------------------------------------------- |
+| `NOT_INITIALIZED`               | `init()` has not finished yet.              |
+| `APPLE_PAY_UNSUPPORTED_BROWSER` | This browser cannot run Apple Pay.          |
+| `APPLE_PAY_NOT_ENABLED`         | Apple Pay is not enabled for your business. |
+
+The codes and messages are the same ones `mount()` throws for the same conditions, and when more than one applies you get the one `mount()` would report first — in the order listed above.
+
+#### What `available: true` does and does not promise
+
+It means the browser exposes Apple Pay **and** your business has it enabled. It does **not** promise the payment sheet will open: no synchronous check can. In the iOS Simulator, for example, the browser reports it can make payments, the button renders, and Apple dismisses the sheet the moment it is tapped. Treat `true` as "render the button" and handle what happens after the tap through `config.events.payment`.
+
+```ts
+const availability = tonder.isApplePayAvailable();
+
+if (availability.available) {
+  await tonder.create('apple_pay_button', { payment }).mount();
+} else {
+  console.info('Apple Pay hidden:', availability.code, availability.message);
+}
+```
+
+### `tonder.create('apple_pay_button', options)`
+
+Creates the Apple Pay button component. The SDK renders the button and handles the click; call `mount()` to render it. Results arrive on `config.events.payment`, not as a return value.
+
+#### Request
+
+```ts
+interface ApplePayButtonOptions {
+  /** Container selector. Defaults to '#tonder-apple-pay-button'. */
+  container_id?: string;
+  /**
+   * Payment data for the charge. Pass an object for a fixed amount, or a
+   * SYNCHRONOUS function for a cart that can change after mount.
+   */
+  payment: ApplePayPaymentInput | (() => ApplePayPaymentInput);
+}
+```
+
+`ApplePayPaymentInput` accepts `amount`, `currency`, `return_url`, `client_reference`, `metadata`, `billing_address` and `idempotency_key` — every field `pay()` takes, and each one is sent on the charge. The single field it does not accept is `payment_method`, because the button already is one.
+
+Style the button through [`customization.apple_pay_button`](#customizationapple_pay_button) on `createTonder()`. The Apple Pay mark itself cannot be replaced — see [The logo cannot be replaced](#the-logo-cannot-be-replaced).
+
+#### Response
+
+```ts
+interface ApplePayButtonComponent {
+  mount(): Promise<void>;
+  unmount(): void;
+}
+```
+
+#### Throws
+
+| Code                      | When                          |
+| ------------------------- | ----------------------------- |
+| `INVALID_PAYMENT_REQUEST` | `options.payment` is missing. |
+
+### `apple_pay_button.mount()`
+
+Renders the Apple Pay button into `container_id`. Calling it again replaces the rendered button.
+
+#### Throws
+
+| Code                            | When                                           |
+| ------------------------------- | ---------------------------------------------- |
+| `NOT_INITIALIZED`               | `init()` has not completed.                    |
+| `APPLE_PAY_UNSUPPORTED_BROWSER` | This browser cannot run Apple Pay.             |
+| `APPLE_PAY_NOT_ENABLED`         | Apple Pay is not enabled for your business.    |
+| `APPLE_PAY_CONTAINER_NOT_FOUND` | No element on the page matches `container_id`. |
+
+### `apple_pay_button.unmount()`
+
+Removes the button and dismisses the payment sheet if one is open. Safe to call more than once.
+
+Skip it on a client-side route change and the open sheet can still be authorized, charging with the payment data captured before you navigated away — see [Component lifecycle](#component-lifecycle).
 
 ### `tonder.pay(input)`
 
@@ -1283,18 +1400,19 @@ APM/SPEI responses may include settlement fields:
 
 #### Throws
 
-| Code                                                            | When                                                                                                        |
-| --------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| `NOT_INITIALIZED`                                               | `tonder.init()` has not completed.                                                                          |
-| `MISSING_CUSTOMER`                                              | `session.customer` was not configured.                                                                      |
-| `INVALID_PAYMENT_REQUEST`                                       | `amount`, `return_url`, or `payment_method` is invalid.                                                     |
-| `INVALID_APM_CONFIG`                                            | `safetypayCash` or `safetypayTransfer` is missing `config.country`, `config.channel`, or `config.bank_ids`. |
-| `MOUNT_COLLECT_ERROR`                                           | Card fields cannot be collected.                                                                            |
-| `PAYMENT_PROCESS_ERROR`                                         | The payment request fails.                                                                                  |
-| `FETCH_TRANSACTION_ERROR`                                       | Hosted/3DS resolution cannot retrieve the transaction.                                                      |
-| `POLL_TIMEOUT_ERROR`                                            | Embedded card 3DS signaled completion, but reconciliation did not reach a final status in time.             |
-| `REQUEST_ABORTED`                                               | The embedded hosted-payment wait was canceled.                                                              |
-| `SAVE_CARD_ERROR`, `REMOVE_CARD_ERROR`, `CARD_ON_FILE_DECLINED` | Card-on-file setup or rollback fails.                                                                       |
+| Code                                                            | When                                                                                                                                                                      |
+| --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `NOT_INITIALIZED`                                               | `tonder.init()` has not completed.                                                                                                                                        |
+| `MISSING_CUSTOMER`                                              | `session.customer` was not configured.                                                                                                                                    |
+| `SECURE_TOKEN_REQUIRED`                                         | `session.secure_token` was not configured, and this charge stores a card: `{ type: 'saved_card' }`, or `{ type: 'card' }` when Card on File is enabled for your business. |
+| `INVALID_PAYMENT_REQUEST`                                       | `amount`, `return_url`, or `payment_method` is invalid.                                                                                                                   |
+| `INVALID_APM_CONFIG`                                            | `safetypayCash` or `safetypayTransfer` is missing `config.country`, `config.channel`, or `config.bank_ids`.                                                               |
+| `MOUNT_COLLECT_ERROR`                                           | Card fields cannot be collected.                                                                                                                                          |
+| `PAYMENT_PROCESS_ERROR`                                         | The payment request fails.                                                                                                                                                |
+| `FETCH_TRANSACTION_ERROR`                                       | Hosted/3DS resolution cannot retrieve the transaction.                                                                                                                    |
+| `POLL_TIMEOUT_ERROR`                                            | Embedded card 3DS signaled completion, but reconciliation did not reach a final status in time.                                                                           |
+| `REQUEST_ABORTED`                                               | The embedded hosted-payment wait was canceled.                                                                                                                            |
+| `SAVE_CARD_ERROR`, `REMOVE_CARD_ERROR`, `CARD_ON_FILE_DECLINED` | Card-on-file setup or rollback fails.                                                                                                                                     |
 
 ### `tonder.getTransaction(id)`
 
@@ -1515,25 +1633,93 @@ Example:
 
 ## Types
 
-Useful exports:
+Every type below is exported from the package root.
+
+Configuration and session:
 
 ```ts
 import type {
   TonderConfig,
-  PayInput,
-  RawTransaction,
+  TonderSession,
+  TonderMode,
   Customer,
-  Card,
-  EnrollResult,
+  BillingAddress,
+  TonderEvents,
+  PresentationEvents,
+  PaymentEvents,
+} from '@tonder.io/web-sdk';
+```
+
+Payments and transactions:
+
+```ts
+import type {
+  PayInput,
+  PaymentMethod,
+  RawTransaction,
+  BackendNextAction,
   PaymentMethodInfo,
   PaymentMethodBank,
   PaymentMethodBanks,
-  CardFieldsOptions,
-  CardFieldsComponent,
-  TonderEvents,
-  PresentationEvents,
 } from '@tonder.io/web-sdk';
 ```
+
+Cards:
+
+```ts
+import type {
+  Card,
+  EnrollResult,
+  CardFieldsOptions,
+  CardFieldsComponent,
+  CardField,
+  CardFieldState,
+  CardFieldEvents,
+  RevealCardFieldsInput,
+  RevealableCardField,
+} from '@tonder.io/web-sdk';
+```
+
+Apple Pay:
+
+```ts
+import type {
+  ApplePayAvailability,
+  ApplePayButtonOptions,
+  ApplePayButtonComponent,
+  ApplePayPaymentInput,
+} from '@tonder.io/web-sdk';
+```
+
+Components and customization:
+
+```ts
+import type {
+  TonderMountableComponent,
+  TonderComponent,
+  TonderComponentType,
+  TonderCustomization,
+  CardFieldsCustomization,
+  ApplePayButtonCustomization,
+  CardLabels,
+  CardPlaceholders,
+  CardStyles,
+  CardFieldErrorMessages,
+  FieldStyles,
+  CollectInputStyles,
+  LabelStyles,
+  ErrorTextStyles,
+} from '@tonder.io/web-sdk';
+```
+
+Errors:
+
+```ts
+import { AppError, ErrorKeyEnum } from '@tonder.io/web-sdk';
+import type { AppErrorInput } from '@tonder.io/web-sdk';
+```
+
+`TonderMountableComponent` is the shared shape of anything `tonder.create(...)` returns — both `card_fields` and `apple_pay_button` — so it is the type to reach for when a variable holds either. See [Mount and unmount inside a component](#mount-and-unmount-inside-a-component).
 
 If you load the SDK runtime from the CDN in a TypeScript app, you can still install `@tonder.io/web-sdk` as a devDependency for types only. See [CDN with TypeScript types](#cdn-with-typescript-types).
 
@@ -1668,7 +1854,7 @@ Use `error.code` for branching. Do not parse `error.message`; messages are for d
 | `VAULT_TOKEN_ERROR`   | The SDK could not prepare a secure card-fields session.         | `card_fields.mount()`, `card_fields.reveal()` | Verify merchant vault configuration and retry. |
 | `INVALID_VAULT_TOKEN` | Tonder returned an invalid secure card-fields session response. | `card_fields.mount()`, `card_fields.reveal()` | Retry and contact Tonder if it persists.       |
 
-### Apple Pay
+### Apple Pay errors
 
 The three codes in `apple_pay_button.mount()`'s Throws table are raised before anything is shown. These two arrive later, on `events.payment.on_error`, while the shopper is looking at the payment sheet.
 
@@ -1706,7 +1892,6 @@ Read payment state from `transaction.status`.
 | `Success`    | Payment completed.                                                                 | Confirm the order.                                                   |
 | `Authorized` | Payment was authorized by the processor path.                                      | Continue according to your Tonder setup and reconcile with webhooks. |
 | `Pending`    | Payment is not final yet. Common for redirect 3DS and asynchronous APM/SPEI flows. | Wait for webhook confirmation or read later with `getTransaction()`. |
-| `Processing` | Payment is still being processed by the provider.                                  | Do not fulfill yet; wait for webhook or query again later.           |
 | `Declined`   | Issuer/processor declined the payment.                                             | Show a recoverable payment message.                                  |
 | `Failed`     | Payment failed.                                                                    | Show a recoverable payment message or ask for another method.        |
 | `Cancelled`  | Payment was cancelled or voided.                                                   | Do not fulfill; let the shopper start a new payment if needed.       |

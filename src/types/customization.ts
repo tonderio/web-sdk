@@ -122,29 +122,61 @@ export interface CardFieldsCustomization {
  * renderer unchanged, and the adapter emits the documented defaults for every
  * field left absent.
  *
- * There is deliberately no image, icon, or logo option: Apple's HIG forbids
- * custom Apple Pay artwork, which is why the button is rendered via
- * `-webkit-appearance: -apple-pay-button` rather than an `<img>`. Every field
- * maps to a WebKit CSS property Apple actually exposes; Apple's own tokens keep
- * Apple's casing (`check-out`, `white-outline`) — that is Apple's contract.
+ * Apple permits four changes — call to action, color, size, corner radius —
+ * plus the label's language. There is no logo option because the control is
+ * drawn natively, not composed from CSS. Do NOT widen this interface without a
+ * page below saying the property is supported: an unsupported declaration is
+ * dropped silently rather than rejected.
+ *
+ * - type:   https://developer.apple.com/documentation/applepayontheweb/displaying-apple-pay-buttons-using-css
+ * - rest:   https://developer.apple.com/documentation/applepayontheweb/styling-the-apple-pay-button-using-css
+ * - locale: https://developer.apple.com/documentation/applepayontheweb/localizing-apple-pay-buttons-using-css
  */
 export interface ApplePayButtonCustomization {
-  /** Maps to -apple-pay-button-type. Defaults to 'buy'. */
-  type?:
+  /**
+   * Maps to -apple-pay-button-type. Defaults to 'buy'. Grouped by the Apple Pay
+   * on the Web version that introduced each value; an older Safari substitutes
+   * the plain button rather than failing.
+   */
+  type?: // Version 2
     | 'buy'
-    | 'plain'
     | 'donate'
-    | 'book'
-    | 'subscribe'
-    | 'check-out'
+    | 'plain'
     | 'set-up'
-    | 'continue'
-    | 'order';
+    // Version 4
+    | 'book'
+    | 'check-out'
+    | 'subscribe'
+    // Version 10
+    | 'add-money'
+    | 'contribute'
+    | 'order'
+    | 'reload'
+    | 'rent'
+    | 'support'
+    | 'tip'
+    | 'top-up'
+    // Version 12
+    | 'continue';
   /** Maps to -apple-pay-button-style. Defaults to 'black'. */
   style?: 'black' | 'white' | 'white-outline';
-  /** Maps to -apple-pay-button-locale, e.g. 'es-MX'. */
+  /**
+   * BCP 47 tag for the label, e.g. 'es-MX'. Applied as the button's `lang`
+   * attribute: Apple has no `-apple-pay-button-locale` property.
+   */
   locale?: string;
+  /**
+   * Any CSS length. Apple's minimum is 100pt for `plain`, 140pt otherwise —
+   * below it, or too narrow for the translated label, Apple substitutes the
+   * plain button.
+   */
+  width?: string;
+  /** Any CSS length. Apple's minimum is 30pt. */
   height?: string;
+  /**
+   * Any CSS length. A SINGLE value: Apple applies the largest to all four
+   * corners. Defaults to 4pt.
+   */
   border_radius?: string;
 }
 

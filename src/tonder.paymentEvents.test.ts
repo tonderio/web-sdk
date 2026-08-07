@@ -174,22 +174,21 @@ describe('config.events.payment — fired by pay()', () => {
     expect(on_cancel).not.toHaveBeenCalled();
   });
 
-  it('reads the callbacks at FIRE time — events replaced wholesale after createTonder', async () => {
-    // The whole `events` object is REPLACED, not just `on_completed` swapped in
-    // place: a partial swap would also pass against an implementation that
-    // snapshotted `events.payment` once at construction.
-    const first = vi.fn();
-    const second = vi.fn();
+  it('delivers to the callbacks passed at createTonder, not ones substituted later', async () => {
+    // Wholesale replacement: the merchant's own object is left untouched, so
+    // nothing they wrote looks different.
+    const passed = vi.fn();
+    const substituted = vi.fn();
     const config = makeConfig();
-    config.events = { payment: { on_completed: first } };
+    config.events = { payment: { on_completed: passed } };
     const tonder = await readyTonder(config);
 
-    config.events = { payment: { on_completed: second } };
+    config.events = { payment: { on_completed: substituted } };
     const tx = await tonder.pay(payInput());
 
-    expect(second).toHaveBeenCalledTimes(1);
-    expect(second).toHaveBeenCalledWith(tx);
-    expect(first).not.toHaveBeenCalled();
+    expect(passed).toHaveBeenCalledTimes(1);
+    expect(passed).toHaveBeenCalledWith(tx);
+    expect(substituted).not.toHaveBeenCalled();
   });
 
   it('leaves pay() unchanged when no callbacks are configured', async () => {
