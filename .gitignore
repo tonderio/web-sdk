@@ -13,8 +13,15 @@ playwright-report/
 blob-report/
 .playwright/
 
-# Internal planning & research docs (kept local — not published)
-docs/
+# Internal planning & research docs (kept local — not published).
+#
+# The two migration guides are the exception: they are written for merchants,
+# they are linked from the README, and the docs MCP syncs them from this repo.
+# Everything else under docs/ stays private — check with `git check-ignore -v`
+# before adding another exception.
+docs/*
+!docs/migration_direct_api_to_web_sdk.md
+!docs/migration_legacy_sdk_to_web_sdk.md
 
 # Tooling / local state
 .atl/
