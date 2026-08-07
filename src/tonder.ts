@@ -689,11 +689,14 @@ export class Tonder {
     inputType: string,
     input: PayInput,
   ): string | null {
-    if (inputType === 'card') {
+    if (Tonder.isMethodType(inputType, 'card')) {
       return 'create';
     }
 
-    if (inputType === 'saved_card' && 'card_id' in input.payment_method) {
+    if (
+      Tonder.isMethodType(inputType, 'saved_card') &&
+      'card_id' in input.payment_method
+    ) {
       return `update:${input.payment_method.card_id}`;
     }
 
@@ -800,7 +803,7 @@ export class Tonder {
   ): Promise<ResolvedPaymentMethod> {
     const method = input.payment_method;
 
-    if (method.type === 'card') {
+    if (Tonder.isMethodType(method.type, 'card')) {
       if (this.isCofActive()) {
         const params = await this.buildCofEnrollParams(input.currency);
         const { cardId } = await this.#cofService.enrollCard(params);
@@ -829,7 +832,7 @@ export class Tonder {
       return { paymentMethod: buildCardPaymentMethod(tokens) };
     }
 
-    if (method.type === 'saved_card') {
+    if (Tonder.isMethodType(method.type, 'saved_card')) {
       const card_id = 'card_id' in method ? method.card_id : undefined;
       if (!card_id || card_id.trim() === '') {
         throw new AppError({
@@ -1212,6 +1215,17 @@ export class Tonder {
    * customer is NOT validated here — it is sourced from `config.session.customer` and
    * guarded by the pay() MISSING_CUSTOMER pre-flight before this runs.
    */
+  /**
+   * The card discriminators, case-insensitively.
+   *
+   * Merchants read `payment_method_type` off a webhook, see `CARD`, and pass
+   * that back to `pay()`. Matching case-sensitively sent it down the APM branch
+   * instead: a charge with no card data, and no error to notice.
+   */
+  private static isMethodType(type: string, expected: string): boolean {
+    return type.toLowerCase() === expected;
+  }
+
   private static assertValidPayInput(input: PayInput): void {
     const invalid = (system_error: string): never => {
       throw new AppError({

@@ -30,7 +30,7 @@ Browser TypeScript SDK for accepting payments with Tonder. It provides secure ca
   - [Save a new card](#save-a-new-card)
   - [Alternative payment methods](#alternative-payment-methods)
   - [Apple Pay](#apple-pay)
-    - [Register your domain with Apple first](#register-your-domain-with-apple-first)
+    - [Ask Tonder to register your domain first](#ask-tonder-to-register-your-domain-first)
 - [API reference](#api-reference)
   - [`createTonder(config)`](#createtonderconfig)
   - [`tonder.init()`](#tonderinit)
@@ -65,7 +65,7 @@ npm install @tonder.io/web-sdk
 import { createTonder, AppError, ErrorKeyEnum } from '@tonder.io/web-sdk';
 ```
 
-No bundler? Use the browser global build. See [CDN build](#cdn-build).
+Or load it from the CDN as a browser global — see [CDN build](#cdn-build). Both work in every framework; the CDN tracks a major-version channel, npm is pinned to the version you install.
 
 ## Before you start
 
@@ -88,7 +88,6 @@ Vite / React:
 const tonderPublicConfig = {
   api_key: import.meta.env.VITE_TONDER_PUBLIC_API_KEY,
   environment: import.meta.env.VITE_TONDER_ENVIRONMENT as
-    | 'sandbox'
     | 'stage'
     | 'production',
 };
@@ -100,7 +99,6 @@ Next.js Client Components:
 const tonderPublicConfig = {
   api_key: process.env.NEXT_PUBLIC_TONDER_PUBLIC_API_KEY,
   environment: process.env.NEXT_PUBLIC_TONDER_ENVIRONMENT as
-    | 'sandbox'
     | 'stage'
     | 'production',
 };
@@ -249,7 +247,7 @@ const tonder = createTonder({
 | Field                            | Required                               | Description                                                                                                    |
 | -------------------------------- | -------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
 | `api_key`                        | Yes                                    | Public Tonder key for browser integrations.                                                                    |
-| `environment`                    | Yes                                    | `'sandbox'`, `'stage'`, or `'production'`.                                                                     |
+| `environment`                    | Yes                                    | `'stage'` for testing, `'production'` when you go live.                                                        |
 | `session.customer`               | For `pay()` and saved-card operations  | Customer identity. Omit for read-only return pages that only call `getTransaction()`.                          |
 | `session.secure_token`           | For saved-card/Card-on-File operations | Short-lived token minted by your backend. See [Backend secure token endpoint](#backend-secure-token-endpoint). |
 | `presentation_mode`              | No                                     | `'redirect'` by default, or `'embedded'` for SDK-owned modal presentation.                                     |
@@ -651,10 +649,10 @@ app.post('/api/tonder/secure-token', async (_req, res) => {
 
 Use the matching Tonder API host for your environment:
 
-| SDK environment      | Backend token URL                           |
-| -------------------- | ------------------------------------------- |
-| `sandbox` or `stage` | `https://stage.tonder.io/api/secure-token/` |
-| `production`         | `https://app.tonder.io/api/secure-token/`   |
+| SDK environment | Backend token URL                           |
+| --------------- | ------------------------------------------- |
+| `stage`         | `https://stage.tonder.io/api/secure-token/` |
+| `production`    | `https://app.tonder.io/api/secure-token/`   |
 
 Then pass the value returned by your backend to the SDK:
 
@@ -748,7 +746,24 @@ const enrollment = await tonder.enrollCard();
 
 ### Alternative payment methods
 
-Use `getPaymentMethods()` when you want to render the methods enabled for your business. This call is optional: if your checkout already knows which method it wants to offer, pass the method code directly to `pay()` (`{ type: 'spei' }`, `{ type: 'oxxopay' }`, etc.).
+Use `getPaymentMethods()` when you want to render the methods enabled for your business. This call is optional: if your checkout already knows which method it wants to offer, pass the method code directly to `pay()`.
+
+#### Method codes
+
+| Code                | Method             |
+| ------------------- | ------------------ |
+| `card`              | Credit/debit card  |
+| `saved_card`        | A stored card      |
+| `spei`              | SPEI transfer      |
+| `oxxopay`           | OXXO Pay           |
+| `mercadopago`       | Mercado Pago       |
+| `safetypaycash`     | SafetyPay cash     |
+| `safetypaytransfer` | SafetyPay transfer |
+| `neosurf`           | Neosurf            |
+
+**The code reaches Tonder exactly as you write it.** The SDK does not re-case it, so `spei` and `SPEI` both work and each is stored and echoed back in your webhook's `payment_method_type` as you sent it. Pick one spelling and keep it, or your own reports will show the same method under two names.
+
+`card` and `saved_card` are the exception: both are sent as `CARD`, because a stored card is a card charge with a token rather than a separate method.
 
 For bank-backed SafetyPay methods, use `getPaymentMethodBanks()` and build `payment_method.config` from the selected bank:
 
@@ -783,7 +798,7 @@ const transaction = await tonder.pay({
   return_url: 'https://yourstore.example/checkout/return',
   client_reference: 'order_1001',
   payment_method: {
-    type: 'safetypayCash',
+    type: 'safetypaycash',
     config: {
       country: bank.country, // e.g. 'Mexico'
       channel: bank.channel, // 'WP' for cash, 'OL' for transfer
@@ -801,9 +816,9 @@ Apple Pay works differently from every other method in this SDK: **the SDK rende
 
 `tonder.pay({ payment_method: { type: 'apple_pay' } })` is rejected on purpose — use the component below.
 
-#### Register your domain with Apple first
+#### Ask Tonder to register your domain first
 
-Apple will not let a page take an Apple Pay payment until the domain serving that page is registered with Apple under Tonder's merchant identifier. This is a one-time setup step per domain, and it is the most common reason a correct integration fails in production.
+Apple will not let a page take an Apple Pay payment until its domain has been registered. **Tonder does that registration for you** — you never contact Apple, and you do not need an Apple developer account. What you do is send Tonder your domains and host one file. It is a one-time step per domain, and skipping it is the most common reason a correct integration fails in production.
 
 It takes four steps, in this order:
 
@@ -947,7 +962,7 @@ The returned instance carries no readable properties of its own. `JSON.stringify
 ```ts
 interface TonderConfig {
   api_key: string;
-  environment: 'sandbox' | 'stage' | 'production';
+  environment: 'stage' | 'production';
   session?: {
     customer?: {
       email: string;
@@ -1325,12 +1340,20 @@ await tonder.pay({
 
 Use `metadata` for non-sensitive merchant context that helps reconciliation and reports. You can send any JSON-safe fields your commerce system needs. These metadata keys have reporting meaning when present:
 
-| Metadata key     | Report usage                                                                                |
-| ---------------- | ------------------------------------------------------------------------------------------- |
-| `operation_date` | Business operation date/time for reporting and reconciliation.                              |
-| `customer_email` | Customer email shown in transaction reports; falls back to the customer email when omitted. |
-| `customer_id`    | Merchant customer identifier for report filtering and reconciliation.                       |
-| `business_user`  | Internal user, POS terminal, cashier, or automation that initiated the payment.             |
+| Metadata key     | Column in the report        | What it is                                                                                       |
+| ---------------- | --------------------------- | ------------------------------------------------------------------------------------------------ |
+| `order_id`       | **Business Transaction ID** | Your internal order identifier. See the note below — this one interacts with `client_reference`. |
+| `customer_id`    | Customer ID                 | Your internal customer identifier, for filtering and reconciliation.                             |
+| `customer_email` | Customer Email              | The shopper's email. Falls back to `session.customer.email` when omitted.                        |
+| `business_user`  | Business User               | Whoever initiated the payment: a POS terminal, a cashier, an automation.                         |
+| `operation_date` | Business time               | Your business operation date, for reporting in your own timezone.                                |
+
+**`metadata.order_id` wins over `client_reference` in reports.** Both identify your order, but they are not the same field and they do not merge:
+
+- `client_reference` is a first-class payment field. It travels in the transaction, appears in webhooks, and is required on every `pay()` call.
+- `metadata.order_id` is optional, and exists only for reporting. When present, it becomes the **Business Transaction ID** column; when absent, that column falls back to `client_reference`.
+
+So sending both is fine, and sending only `client_reference` is fine. What causes surprise is sending both with **different values** — your webhooks then correlate on one identifier and your exported reports on the other. Send the same value, or send only `client_reference`.
 
 ```ts
 await tonder.pay({
@@ -1406,7 +1429,7 @@ APM/SPEI responses may include settlement fields:
 | `MISSING_CUSTOMER`                                              | `session.customer` was not configured.                                                                                                                                    |
 | `SECURE_TOKEN_REQUIRED`                                         | `session.secure_token` was not configured, and this charge stores a card: `{ type: 'saved_card' }`, or `{ type: 'card' }` when Card on File is enabled for your business. |
 | `INVALID_PAYMENT_REQUEST`                                       | `amount`, `return_url`, or `payment_method` is invalid.                                                                                                                   |
-| `INVALID_APM_CONFIG`                                            | `safetypayCash` or `safetypayTransfer` is missing `config.country`, `config.channel`, or `config.bank_ids`.                                                               |
+| `INVALID_APM_CONFIG`                                            | `safetypaycash` or `safetypaytransfer` is missing `config.country`, `config.channel`, or `config.bank_ids`.                                                               |
 | `MOUNT_COLLECT_ERROR`                                           | Card fields cannot be collected.                                                                                                                                          |
 | `PAYMENT_PROCESS_ERROR`                                         | The payment request fails.                                                                                                                                                |
 | `FETCH_TRANSACTION_ERROR`                                       | Hosted/3DS resolution cannot retrieve the transaction.                                                                                                                    |
@@ -1454,16 +1477,16 @@ interface EnrollResult {
 
 #### Throws
 
-| Code                       | When                                        |
-| -------------------------- | ------------------------------------------- |
-| `NOT_INITIALIZED`          | `tonder.init()` has not completed.          |
-| `MISSING_CUSTOMER`         | `session.customer` was not configured.      |
-| `SECURE_TOKEN_REQUIRED`    | `session.secure_token` was not configured.  |
-| `MOUNT_COLLECT_ERROR`      | Card fields cannot be collected.            |
-| `CUSTOMER_OPERATION_ERROR` | Customer registration/fetch fails.          |
-| `SAVE_CARD_ERROR`          | Card save fails.                            |
-| `CARD_ON_FILE_DECLINED`    | Card-on-file enrollment is declined.        |
-| `ACQUIRER_LOAD_ERROR`      | Card-on-file processor library cannot load. |
+| Code                       | When                                                |
+| -------------------------- | --------------------------------------------------- |
+| `NOT_INITIALIZED`          | `tonder.init()` has not completed.                  |
+| `MISSING_CUSTOMER`         | `session.customer` was not configured.              |
+| `SECURE_TOKEN_REQUIRED`    | `session.secure_token` was not configured.          |
+| `MOUNT_COLLECT_ERROR`      | Card fields cannot be collected.                    |
+| `CUSTOMER_OPERATION_ERROR` | Customer registration/fetch fails.                  |
+| `SAVE_CARD_ERROR`          | Card save fails.                                    |
+| `CARD_ON_FILE_DECLINED`    | Card-on-file enrollment is declined.                |
+| `ACQUIRER_LOAD_ERROR`      | The Card-on-File processing library could not load. |
 
 ### `tonder.getCustomerCards()`
 
@@ -1812,7 +1835,7 @@ Use `error.code` for branching. Do not parse `error.message`; messages are for d
 | `NOT_INITIALIZED`          | A method needs initialized SDK state but `init()` has not completed. | `card_fields.mount()`, `card_fields.reveal()`, `tonder.pay()`, `tonder.enrollCard()`, saved-card methods | Call `await tonder.init()` before the operation. Read-only methods such as `getTransaction()` and payment-method catalog methods do not need `init()`. |
 | `INVALID_COMPONENT_TYPE`   | The requested UI component is not supported.                         | `tonder.create()`                                                                                        | Use `tonder.create('card_fields', options)`.                                                                                                           |
 | `SECURE_FIELDS_LOAD_ERROR` | The browser could not load the secure card-fields library.           | `card_fields.mount()`, `card_fields.reveal()`                                                            | Check CSP, ad blockers, network access, and the page environment.                                                                                      |
-| `ACQUIRER_LOAD_ERROR`      | The Card-on-File acquirer library could not load.                    | `tonder.enrollCard()`, `tonder.pay()` when COF is needed                                                 | Check network/CSP and retry.                                                                                                                           |
+| `ACQUIRER_LOAD_ERROR`      | The Card-on-File processing library could not load.                  | `tonder.enrollCard()`, `tonder.pay()` when COF is needed                                                 | Check network/CSP and retry.                                                                                                                           |
 
 ### Customer and saved-card credentials
 
@@ -1832,7 +1855,7 @@ Use `error.code` for branching. Do not parse `error.message`; messages are for d
 | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `INVALID_PAYMENT_REQUEST`         | Required payment fields are missing or invalid (`amount`, `return_url`, `client_reference`, `payment_method`, saved-card `card_id`, etc.).                   | `tonder.pay()`                                                           | Validate the request before calling `pay()`.                                                                                                        |
 | `INVALID_PAYMENT_REQUEST_CARD_PM` | A card payment path received a non-card method.                                                                                                              | `tonder.pay()`                                                           | Use `{ type: 'card' }` for new-card payments or a supported APM code for alternative methods.                                                       |
-| `INVALID_APM_CONFIG`              | `safetypayCash` or `safetypayTransfer` is missing required config.                                                                                           | `tonder.pay()`                                                           | Pass `payment_method.config.country`, `payment_method.config.channel`, and `payment_method.config.bank_ids` using the selected `PaymentMethodBank`. |
+| `INVALID_APM_CONFIG`              | `safetypaycash` or `safetypaytransfer` is missing required config.                                                                                           | `tonder.pay()`                                                           | Pass `payment_method.config.country`, `payment_method.config.channel`, and `payment_method.config.bank_ids` using the selected `PaymentMethodBank`. |
 | `MOUNT_COLLECT_ERROR`             | Secure fields could not mount or collect valid card data.                                                                                                    | `card_fields.mount()`, `tonder.pay()`, `tonder.enrollCard()`             | Ensure all field containers exist and the shopper completed valid card fields.                                                                      |
 | `PAYMENT_PROCESS_ERROR`           | Tonder could not create/process the payment or the transport failed. Declined payments returned by Tonder are not thrown; they are returned as transactions. | `tonder.pay()`                                                           | Inspect `error.details` and reconcile with your backend logs. Retry only when safe/idempotent.                                                      |
 | `FETCH_TRANSACTION_ERROR`         | Transaction lookup failed.                                                                                                                                   | `tonder.getTransaction()`, embedded 3DS reconciliation in `tonder.pay()` | Verify the transaction id and retry from backend/webhook records.                                                                                   |
@@ -1910,21 +1933,21 @@ Use webhooks when:
 
 Tonder webhooks use a flat payload: fields are at the top level, not wrapped in a nested `data` object. Common payment fields include:
 
-| Field                 | Type   | Description                                                            |
-| --------------------- | ------ | ---------------------------------------------------------------------- |
-| `id`                  | string | Unique webhook event identifier.                                       |
-| `operation_type`      | string | Operation type, usually `payment` for this SDK.                        |
-| `amount`              | string | Transaction amount as sent by the webhook event.                       |
-| `currency`            | string | ISO currency code, for example `MXN`.                                  |
-| `client_reference`    | string | Your own order/reference identifier.                                   |
-| `status`              | string | Current transaction status. See [Payment statuses](#payment-statuses). |
-| `provider`            | string | Payment provider/acquirer that processed the transaction.              |
-| `transaction_id`      | string | Tonder transaction identifier.                                         |
-| `payment_method_type` | string | Payment method used, for example `CARD`, `SPEI`, or `OXXO`.            |
-| `created`             | string | ISO timestamp for the event.                                           |
-| `metadata`            | object | Metadata you passed when creating the payment.                         |
-| `event_type`          | string | Event name, for example `payment_Success` or `payment_Pending`.        |
-| `action`              | string | Event action, for example `MODIFY`.                                    |
+| Field                 | Type   | Description                                                                                                                                         |
+| --------------------- | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`                  | string | **The transaction's id** — the same one `pay()` returns and `getTransaction()` takes. Not unique per event: every event for one payment carries it. |
+| `operation_type`      | string | Operation type, usually `payment` for this SDK.                                                                                                     |
+| `amount`              | string | Transaction amount as sent by the webhook event.                                                                                                    |
+| `currency`            | string | ISO currency code, for example `MXN`.                                                                                                               |
+| `client_reference`    | string | Your own order/reference identifier.                                                                                                                |
+| `status`              | string | Current transaction status. See [Payment statuses](#payment-statuses).                                                                              |
+| `provider`            | string | The provider that processed the transaction.                                                                                                        |
+| `transaction_id`      | string | A Tonder-internal id for the processing record. Quote it to support; do not correlate your orders on it.                                            |
+| `payment_method_type` | string | Payment method used, for example `CARD`, `SPEI`, or `OXXO`.                                                                                         |
+| `created`             | string | ISO timestamp for the event.                                                                                                                        |
+| `metadata`            | object | Metadata you passed when creating the payment.                                                                                                      |
+| `event_type`          | string | `<operation_type>_<status>`, for example `payment_Success` or `payment_Pending`. This is what changes between events for the same payment.          |
+| `action`              | string | Event action, for example `MODIFY`.                                                                                                                 |
 
 Example `payment_Success` event:
 
@@ -1952,11 +1975,13 @@ Webhook endpoint checklist:
 
 - Use a publicly reachable HTTPS URL.
 - Verify the request comes from Tonder according to your account configuration.
-- Respond within 30 seconds.
-- Return any `2xx` status to acknowledge receipt.
-- Make processing idempotent by storing processed event IDs.
+- Respond within 30 seconds — that is the delivery timeout, not a suggestion.
+- Return any `2xx` status to acknowledge receipt. Anything else counts as a failure.
+- Make processing idempotent, but **do not deduplicate on `id` alone**. One payment emits several events — a `Pending` then a `Success`, say — and they all carry the same `id`. Key on `id` together with `status`, or you will drop the event that says the money arrived.
 
-For setup, retry behavior, and delivery details, see [How webhooks work](https://docs.tonder.io/direct-integration/webhooks/how-webhooks-works).
+**Delivery is retried, but not forever.** Tonder attempts each event up to three times, 60 seconds apart. An event that fails all three goes to a dead-letter queue and is kept for 30 days for manual reprocessing — so an endpoint that is down for an hour does not lose the payment, but it does mean your own reconciliation has to close the gap rather than waiting for a delivery that is no longer coming. `getTransaction()` is how you close it.
+
+Webhook setup, delivery details, and the full event catalog live in the Tonder API docs: [How webhooks work](https://docs.tonder.io/direct-integration/webhooks/how-webhooks-works). The payload above is the same one Direct API sends — the SDK does not add a wrapper or a separate event stream, so a merchant already consuming Tonder webhooks server-to-server keeps the exact same handler.
 
 ## CDN build
 

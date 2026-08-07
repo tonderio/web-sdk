@@ -28,6 +28,12 @@ export interface SavedCardPaymentMethod {
 /**
  * Build new-card payment-method data from secure card-field tokens. Tokens are
  * references, not raw PAN/CVV.
+ *
+ * `type: 'CARD'` is emitted uppercase whatever the merchant wrote, and that is
+ * load-bearing rather than stylistic. The backend stores this string verbatim
+ * and the webhook echoes it back as `payment_method_type`, so normalizing here
+ * is what keeps that field the same value for every merchant. Send it through
+ * as typed and one merchant's webhooks read `card` while another's read `CARD`.
  */
 export function buildCardPaymentMethod(
   tokens: Record<string, string>,
