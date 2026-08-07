@@ -34,6 +34,7 @@ import type { ApplePayPaymentInput } from '../../types/apple-pay';
 import type { Customer, PaymentEventSink } from '../../shared/types';
 import { AppError } from '../../shared/errors/AppError';
 import { ErrorKeyEnum } from '../../shared/errors/ErrorKeyEnum';
+import { snapshotPaymentInput } from '../../shared/payment-input-snapshot';
 
 /** Values read LIVE, at click or authorization time. Never snapshotted. */
 export interface ApplePayCheckoutContext {
@@ -90,8 +91,12 @@ export class ApplePayCheckoutService {
   public start(input: ApplePayCheckoutStartInput): void {
     try {
       const ctx = this.deps.getContext();
-      const payment =
-        typeof input.payment === 'function' ? input.payment() : input.payment;
+      // Copied, not aliased: this is read again at `onPaymentAuthorized`, and
+      // a cart that changes while the sheet is open would charge a price the
+      // shopper never saw.
+      const payment = snapshotPaymentInput(
+        typeof input.payment === 'function' ? input.payment() : input.payment,
+      );
       const currency = payment.currency ?? DEFAULT_CURRENCY;
 
       const request = buildApplePayPaymentRequest({

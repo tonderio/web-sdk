@@ -89,15 +89,10 @@ function copyOwnKeys(
  * their own reference afterwards changes nothing the SDK will send. The write
  * is inert, not rejected.
  *
- * `events` is the one documented exception, handled by EXCLUSION rather than by
- * copying: the key is left out of the clone and an accessor pair installed in
- * its place, reading the merchant's original object at the moment each event
- * fires. Excluding it — rather than keeping the sub-object by reference — is
- * what makes "no `events` at construction" work: there is no key to alias, so
- * the merchant's later assignment would otherwise be invisible.
- *
- * The setter exists because an accessor without one throws a `TypeError` on
- * assignment in strict mode, and bundled ESM is always strict.
+ * `events` is copied too, and that is load-bearing: the callbacks receive the
+ * transaction, so anything still able to reach them could substitute the
+ * function the SDK hands the result to. The nested groups are copied by
+ * structure so an in-place swap of one callback is inert as well.
  */
 export function createConfigSnapshot(
   original: TonderConfig,
@@ -118,14 +113,23 @@ export function createConfigSnapshot(
     snapshot[key] = clonePlainDeep(read, 1, onSkippedKey);
   }
 
-  Object.defineProperty(snapshot, 'events', {
-    get: () => original.events,
-    set: (next: TonderEvents | undefined) => {
-      original.events = next;
-    },
-    enumerable: true,
-    configurable: true,
-  });
+  // Read through a try like every other key: a throwing getter should cost the
+  // callbacks, not the instance.
+  let events: TonderEvents | undefined;
+  try {
+    events = original.events;
+  } catch {
+    onSkippedKey?.('events');
+  }
+
+  if (events) {
+    snapshot.events = {
+      ...(events.payment ? { payment: { ...events.payment } } : {}),
+      ...(events.presentation
+        ? { presentation: { ...events.presentation } }
+        : {}),
+    };
+  }
 
   return snapshot as unknown as TonderConfig;
 }

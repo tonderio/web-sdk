@@ -53,6 +53,7 @@ import type { AcquirerPort } from './ports/acquirer.port';
 import type { HttpPort } from './ports/http.port';
 import type { TokenizerPort } from './ports/tokenizer.port';
 import { resolveEnv, type TonderBaseUrls } from './shared/config/env';
+import { snapshotPaymentInput } from './shared/payment-input-snapshot';
 import { AppError } from './shared/errors/AppError';
 import { ErrorKeyEnum } from './shared/errors/ErrorKeyEnum';
 import { invokeMerchantCallback } from './shared/merchant-callback';
@@ -598,6 +599,11 @@ export class Tonder {
     if (!this.#core.getConfig().session?.customer) {
       throw new AppError({ errorCode: ErrorKeyEnum.MISSING_CUSTOMER });
     }
+
+    // Copied BEFORE validation: `resolvePaymentMethod`'s await sits between the
+    // checks below and the body they guard, so without this a write landing in
+    // that gap is charged having never been validated.
+    input = snapshotPaymentInput(input);
 
     Tonder.assertValidPayInput(input);
 

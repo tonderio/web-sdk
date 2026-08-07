@@ -246,52 +246,67 @@ describe('createConfigSnapshot — depth cap', () => {
   });
 });
 
-describe('createConfigSnapshot — the events carve-out', () => {
-  it('reflects a later IN-PLACE change to events through the snapshot', () => {
-    const h1 = (): void => undefined;
-    const h2 = (): void => undefined;
+describe('createConfigSnapshot — events are captured, not aliased', () => {
+  it('ignores a single callback swapped in place afterwards', () => {
+    const passed = (): void => undefined;
+    const swapped = (): void => undefined;
     const original = baseConfig();
-    original.events = { payment: { on_completed: h1 } };
+    original.events = { payment: { on_completed: passed } };
 
     const snapshot = createConfigSnapshot(original);
-    expect(snapshot.events?.payment?.on_completed).toBe(h1);
+    original.events.payment!.on_completed = swapped;
 
-    original.events.payment!.on_completed = h2;
-    expect(snapshot.events?.payment?.on_completed).toBe(h2);
+    expect(snapshot.events?.payment?.on_completed).toBe(passed);
   });
 
-  it('reflects a wholesale replacement of events', () => {
-    const h1 = (): void => undefined;
+  it('ignores a wholesale replacement of events', () => {
+    const injected = (): void => undefined;
     const original = baseConfig();
     original.events = { payment: {} };
 
     const snapshot = createConfigSnapshot(original);
-    original.events = { payment: { on_completed: h1 } };
+    original.events = { payment: { on_completed: injected } };
 
-    expect(snapshot.events?.payment?.on_completed).toBe(h1);
+    expect(snapshot.events?.payment?.on_completed).toBeUndefined();
   });
 
-  it('reflects events assigned when the input had no events key at all', () => {
-    const h1 = (): void => undefined;
+  it('ignores events assigned when the input had none', () => {
+    const injected = (): void => undefined;
     const original = baseConfig();
-    expect(original.events).toBeUndefined();
 
     const snapshot = createConfigSnapshot(original);
+    original.events = { payment: { on_completed: injected } };
+
     expect(snapshot.events).toBeUndefined();
-
-    original.events = { payment: { on_completed: h1 } };
-    expect(snapshot.events?.payment?.on_completed).toBe(h1);
   });
 
-  it('writes through to the original when the snapshot events is assigned', () => {
+  it('keeps presentation and payment independent of each other', () => {
+    const onOpen = (): void => undefined;
     const original = baseConfig();
-    const snapshot = createConfigSnapshot(original);
-    const replacement = { payment: {} };
+    original.events = { presentation: { on_open: onOpen } };
 
-    expect(() => {
-      snapshot.events = replacement;
-    }).not.toThrow();
-    expect(original.events).toBe(replacement);
+    const snapshot = createConfigSnapshot(original);
+    original.events.presentation!.on_open = (): void => undefined;
+
+    expect(snapshot.events?.presentation?.on_open).toBe(onOpen);
+    expect(snapshot.events?.payment).toBeUndefined();
+  });
+
+  it('survives an events getter that throws, losing only the callbacks', () => {
+    const original = baseConfig();
+    Object.defineProperty(original, 'events', {
+      get: () => {
+        throw new Error('hostile getter');
+      },
+      configurable: true,
+      enumerable: true,
+    });
+    const skipped: string[] = [];
+
+    const snapshot = createConfigSnapshot(original, (key) => skipped.push(key));
+
+    expect(snapshot.api_key).toBe(baseConfig().api_key);
+    expect(skipped).toContain('events');
   });
 
   it('keeps events enumerable on the snapshot', () => {

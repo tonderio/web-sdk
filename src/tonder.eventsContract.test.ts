@@ -114,37 +114,34 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe('config.events stays live after createTonder()', () => {
-  it('honors an IN-PLACE swap of events.payment.on_completed', async () => {
-    const h1 = vi.fn();
-    const h2 = vi.fn();
+describe('config.events is captured at createTonder()', () => {
+  // Why capturing matters is in createConfigSnapshot; these pin the behavior.
+  it('ignores an IN-PLACE swap of events.payment.on_completed', async () => {
+    const passed = vi.fn();
+    const swapped = vi.fn();
     const config = makeConfig();
-    config.events = { payment: { on_completed: h1 } };
+    config.events = { payment: { on_completed: passed } };
     const tonder = await readyTonder(config);
 
-    // In place, through the SAME `events` and `events.payment` objects. A fix
-    // that kept `events` by reference-identity only would still pass this one;
-    // it is the ABSENT-at-construction case below that defeats that shortcut.
-    config.events.payment!.on_completed = h2;
+    // Through the SAME objects — the case a top-level-only copy would miss.
+    config.events.payment!.on_completed = swapped;
     const tx = await tonder.pay(payInput());
 
-    expect(h2).toHaveBeenCalledTimes(1);
-    expect(h2).toHaveBeenCalledWith(tx);
-    expect(h1).not.toHaveBeenCalled();
+    expect(passed).toHaveBeenCalledTimes(1);
+    expect(passed).toHaveBeenCalledWith(tx);
+    expect(swapped).not.toHaveBeenCalled();
   });
 
-  it('honors events assigned when NO events key existed at construction', async () => {
-    const h1 = vi.fn();
+  it('ignores events assigned when NO events key existed at construction', async () => {
+    const injected = vi.fn();
     const config = makeConfig();
     expect(config.events).toBeUndefined();
     const tonder = await readyTonder(config);
 
-    // There is no key to alias here. Only a design that resolves `events` from
-    // the merchant's original object at fire time can see this assignment.
-    config.events = { payment: { on_completed: h1 } };
-    const tx = await tonder.pay(payInput());
+    // Passing no events is a decision, not an opening.
+    config.events = { payment: { on_completed: injected } };
+    await tonder.pay(payInput());
 
-    expect(h1).toHaveBeenCalledTimes(1);
-    expect(h1).toHaveBeenCalledWith(tx);
+    expect(injected).not.toHaveBeenCalled();
   });
 });
