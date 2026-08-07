@@ -76,6 +76,13 @@ You need:
 - A server endpoint that can create a short-lived `secure_token` when using saved cards/Card on File.
 - A webhook endpoint for reliable payment fulfillment.
 
+**Already integrated with Tonder?** Start from the guide for what you have, not from this README:
+
+| You have today                                            | Guide                                                                      |
+| --------------------------------------------------------- | -------------------------------------------------------------------------- |
+| Direct API, server-to-server                              | [Migrating from Direct API](./docs/migration_direct_api_to_web_sdk.md)     |
+| The legacy SDK — `InlineCheckout` or `LiteInlineCheckout` | [Migrating from the legacy SDK](./docs/migration_legacy_sdk_to_web_sdk.md) |
+
 ## Public browser configuration
 
 Read deployment-specific SDK values from your app's public browser configuration instead of hardcoding real merchant values in checkout code. The Tonder public API key is safe to expose to the browser, but keeping it in config makes environment switching and key rotation safer.
