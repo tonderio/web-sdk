@@ -421,6 +421,7 @@ describe('BrowserApplePay.render', () => {
         type: 'donate',
         style: 'white-outline',
         locale: 'es-MX',
+        width: '100%',
         height: '48px',
         border_radius: '8px',
       },
@@ -430,9 +431,27 @@ describe('BrowserApplePay.render', () => {
     const css = emittedCss(container);
     expect(css).toContain('-apple-pay-button-type: donate');
     expect(css).toContain('-apple-pay-button-style: white-outline');
-    expect(css).toContain('-apple-pay-button-locale: es-MX');
+    expect(css).toContain('width: 100%');
     expect(css).toContain('height: 48px');
     expect(css).toContain('border-radius: 8px');
+
+    // `locale` is NOT a CSS property. Apple reads the button's language from
+    // the `lang` attribute; a `-apple-pay-button-locale` declaration is inert.
+    const button = container.querySelector('button');
+    expect(button?.lang).toBe('es-MX');
+    expect(css).not.toContain('locale');
+  });
+
+  it('leaves `lang` unset when no locale is supplied, deferring to the page', () => {
+    const container = mountContainer();
+
+    new BrowserApplePay().render({
+      containerId: CONTAINER_ID,
+      customization: { type: 'buy' },
+      onClick: vi.fn(),
+    });
+
+    expect(container.querySelector('button')?.lang).toBe('');
   });
 
   it('leaves an omitted height or border_radius at Apple’s own default', () => {
@@ -447,9 +466,9 @@ describe('BrowserApplePay.render', () => {
     });
 
     const css = emittedCss(container);
+    expect(css).not.toContain('width:');
     expect(css).not.toContain('height:');
     expect(css).not.toContain('border-radius');
-    expect(css).not.toContain('-apple-pay-button-locale');
   });
 
   it('throws APPLE_PAY_CONTAINER_NOT_FOUND when the selector matches nothing', () => {

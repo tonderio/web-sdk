@@ -426,6 +426,46 @@ describe('Tonder.pay — /process customer name derivation', () => {
   });
 });
 
+describe('Tonder.pay — the input is copied on entry', () => {
+  // Every guard in assertValidPayInput runs BEFORE `resolvePaymentMethod`'s
+  // await, so a write landing inside it reaches `/process` unchecked.
+  it('charges the amount that was validated, not one written during the await', async () => {
+    const { http, processSpy } = mockHttp(() =>
+      Promise.resolve(backendResponse()),
+    );
+    // Tokenization is the await the mutation lands in.
+    const tokenizer = mockTokenizer();
+    const live = payInput({ amount: 150 });
+    tokenizer.collect = vi.fn(async () => {
+      live.amount = 999999;
+      return { card_number: 'tok' } as never;
+    });
+    const tonder = await readyTonder(http, tokenizer);
+
+    await tonder.pay(live);
+
+    expect(sentBody(processSpy).amount).toBe(150);
+  });
+
+  it('keeps the client_reference that passed validation, not one blanked during the await', async () => {
+    const { http, processSpy } = mockHttp(() =>
+      Promise.resolve(backendResponse()),
+    );
+    const tokenizer = mockTokenizer();
+    const live = payInput({ client_reference: 'order_123' });
+    tokenizer.collect = vi.fn(async () => {
+      // The guard against a blank client_reference has already run.
+      live.client_reference = '';
+      return { card_number: 'tok' } as never;
+    });
+    const tonder = await readyTonder(http, tokenizer);
+
+    await tonder.pay(live);
+
+    expect(sentBody(processSpy).client_reference).toBe('order_123');
+  });
+});
+
 describe('Tonder.pay — happy paths', () => {
   it('success → bare RawTransaction (no wrapper, amount coerced to number)', async () => {
     const { http, processSpy } = mockHttp(() =>

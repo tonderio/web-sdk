@@ -252,6 +252,45 @@ describe('ApplePayCheckoutService.start — click-path synchrony (T1, T2)', () =
     expect(h.createSession.mock.calls[0][0].currencyCode).toBe('MXN');
   });
 
+  it('charges what the sheet showed even if the cart object mutates while it is open', async () => {
+    // The sheet is native, so the page cannot see the price the shopper is
+    // approving. A cart that changes in between — a promo, a stepper, a poll —
+    // must not reach the charge.
+    const captured: Record<string, unknown>[] = [];
+    const processHttp = asHttpPort((request: HttpRequestOptions) => {
+      captured.push(request.body as Record<string, unknown>);
+      return Promise.resolve(backendResponse());
+    });
+    const { port, sessions, createSession } = fakeApplePayPort();
+    const checkout = new ApplePayCheckoutService({
+      applePay: port,
+      validation: new ApplePayService(asHttpPort(() => Promise.resolve({}))),
+      directApi: new DirectApiService(processHttp),
+      getContext: () => context(),
+      emit: fakeSink(),
+    });
+
+    const live = payment({ amount: 150, metadata: { cart_id: 'cart_1' } }) as {
+      amount: number;
+      metadata: Record<string, unknown>;
+    };
+
+    checkout.start(startInput({ payment: () => live }));
+    expect(createSession.mock.calls[0][0].total.amount).toBe('150.00');
+
+    live.amount = 999999;
+    live.metadata.cart_id = 'cart_TAMPERED';
+
+    await sessions[0].handlers.onPaymentAuthorized(TOKEN);
+
+    // Against the SHEET's number, not the literal 150: the invariant is that
+    // the two agree.
+    expect(String(captured[0].amount)).toBe(
+      String(Number(createSession.mock.calls[0][0].total.amount)),
+    );
+    expect(captured[0].metadata).toEqual({ cart_id: 'cart_1' });
+  });
+
   it('reports a failure thrown in the click path through on_error, with no promise to reject', () => {
     const h = harness();
 

@@ -277,19 +277,24 @@ describe('events.presentation callbacks are isolated from the payment path', () 
     expect(() => host.userClose()).not.toThrow();
   });
 
-  it('still reads events.presentation at FIRE time, not at construction', async () => {
+  it('runs the presentation callbacks captured at construction, and only those', async () => {
     const host = invokingHost();
-    const onOpen = vi.fn();
-    const config: TonderConfig = { ...EMBEDDED_CONFIG };
+    const passed = vi.fn();
+    const substituted = vi.fn();
+    const config: TonderConfig = {
+      ...EMBEDDED_CONFIG,
+      events: { presentation: { on_open: passed } },
+    };
     const tonder = await readyTonder({ http: apmHttp(), host, config });
 
-    // Assigned AFTER createTonder — the documented carve-out from the config
-    // snapshot. Isolation must not turn into a construction-time capture.
-    config.events = { presentation: { on_open: onOpen } };
+    // `presentation` gets the same treatment as `payment`: isolation is about
+    // a throwing callback not derailing a charge, not about staying reachable.
+    config.events = { presentation: { on_open: substituted } };
 
     await tonder.pay(payInput({ payment_method: { type: 'oxxo' } }));
 
-    expect(onOpen).toHaveBeenCalledTimes(1);
+    expect(passed).toHaveBeenCalledTimes(1);
+    expect(substituted).not.toHaveBeenCalled();
   });
 
   it('invokes no merchant code when events.presentation is absent', async () => {
