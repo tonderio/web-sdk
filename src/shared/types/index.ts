@@ -204,9 +204,9 @@ export interface PaymentMethodBank {
  * Result of `getPaymentMethodBanks()`: bank options grouped by settlement channel.
  */
 export interface PaymentMethodBanks {
-  /** Cash-channel bank options for `payment_method.type = 'safetypayCash'`. */
+  /** Cash-channel bank options for `payment_method.type = 'safetypaycash'`. */
   cash: PaymentMethodBank[];
-  /** Transfer-channel bank options for `payment_method.type = 'safetypayTransfer'`. */
+  /** Transfer-channel bank options for `payment_method.type = 'safetypaytransfer'`. */
   transfer: PaymentMethodBank[];
 }
 
@@ -264,7 +264,7 @@ export interface PayInput {
    * The payment method to charge: a fresh card (`{ type: 'card' }`), a stored card
    * (`{ type: 'saved_card', card_id }`), or any configured alternative method
    * directly by code (`{ type: 'spei' }`, `{ type: 'oxxopay' }`,
-   * `{ type: 'safetypayCash', config }`, etc.).
+   * `{ type: 'safetypaycash', config }`, etc.).
    */
   payment_method: PaymentMethod;
   /** Arbitrary merchant metadata echoed back on the transaction. */

@@ -2,22 +2,26 @@ import { describe, it, expect } from 'vitest';
 import { buildApmPaymentMethod } from './apm.strategy';
 
 describe('buildApmPaymentMethod', () => {
-  it('normalizes regular payment method codes to lowercase and omits apm_config when no config given', () => {
+  // The SDK does not re-case the code. Rewriting it made the same value reach
+  // Tonder differently through the SDK than server-to-server, and the backend
+  // stores it verbatim, so the merchant's webhook echoed a spelling they never
+  // typed. Every comparison downstream normalizes on its own side.
+  it('passes the code through untouched and omits apm_config when none is given', () => {
     const pm = buildApmPaymentMethod({ apm: 'OXXOPAY' });
 
-    expect(pm).toEqual({ type: 'oxxopay' });
+    expect(pm).toEqual({ type: 'OXXOPAY' });
     expect('apm_config' in pm).toBe(false);
   });
 
-  it('canonicalizes SafetyPay cash for the downstream APM processor', () => {
+  it('leaves SafetyPay spelling to the merchant', () => {
     expect(buildApmPaymentMethod({ apm: 'safetypaycash' })).toEqual({
+      type: 'safetypaycash',
+    });
+    expect(buildApmPaymentMethod({ apm: 'safetypayCash' })).toEqual({
       type: 'safetypayCash',
     });
-  });
-
-  it('canonicalizes SafetyPay transfer for the downstream APM processor', () => {
     expect(buildApmPaymentMethod({ apm: 'SAFETYPAYTRANSFER' })).toEqual({
-      type: 'safetypayTransfer',
+      type: 'SAFETYPAYTRANSFER',
     });
   });
 
@@ -28,7 +32,7 @@ describe('buildApmPaymentMethod', () => {
     });
 
     expect(pm).toEqual({
-      type: 'safetypayCash',
+      type: 'SAFETYPAYCASH',
       apm_config: { country: 'MX', channel: 'cash', bank_ids: [1, 2] },
     });
   });

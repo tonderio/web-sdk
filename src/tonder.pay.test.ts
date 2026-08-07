@@ -466,6 +466,31 @@ describe('Tonder.pay — the input is copied on entry', () => {
   });
 });
 
+describe('Tonder.pay — the card type is matched case-insensitively', () => {
+  // Merchants read `payment_method_type` off a webhook, see `CARD`, and pass it
+  // straight back to pay(). A case-sensitive match sent that down the APM
+  // branch: a charge with no card data, and nothing raised to notice it.
+  for (const type of ['card', 'CARD', 'Card']) {
+    it(`'${type}' takes the card path and sends CARD`, async () => {
+      const { http, processSpy } = mockHttp(() =>
+        Promise.resolve(backendResponse()),
+      );
+      const tokenizer = mockTokenizer();
+      const tonder = await readyTonder(http, tokenizer);
+
+      await tonder.pay(payInput({ payment_method: { type } as never }));
+
+      const method = sentBody(processSpy).payment_method as Record<
+        string,
+        unknown
+      >;
+      expect(method.type).toBe('CARD');
+      expect(method.card_number).toBeDefined();
+      expect(tokenizer.collect).toHaveBeenCalled();
+    });
+  }
+});
+
 describe('Tonder.pay — happy paths', () => {
   it('success → bare RawTransaction (no wrapper, amount coerced to number)', async () => {
     const { http, processSpy } = mockHttp(() =>
@@ -1500,6 +1525,7 @@ describe('Tonder.pay — APM input validation', () => {
     const { http, processSpy } = mockApmHttp(apmInstructionsResponse());
     const tonder = await readyTonder(http, mockTokenizer());
 
+    // Sent verbatim: the SDK does not re-case the merchant's method code.
     const result = await tonder.pay(
       payInput({ payment_method: { type: 'OXXOPAY' } }),
     );
@@ -1508,7 +1534,7 @@ describe('Tonder.pay — APM input validation', () => {
     expect(processSpy).toHaveBeenCalledWith(
       expect.objectContaining({
         body: expect.objectContaining({
-          payment_method: { type: 'oxxopay' },
+          payment_method: { type: 'OXXOPAY' },
         }),
       }),
     );
@@ -1651,7 +1677,7 @@ describe('Tonder.pay — APM/SPEI pending result (never polled)', () => {
 
     expect(processSpy).toHaveBeenCalledWith(
       expect.objectContaining({
-        body: expect.objectContaining({ payment_method: { type: 'oxxopay' } }),
+        body: expect.objectContaining({ payment_method: { type: 'OXXOPAY' } }),
       }),
     );
   });
