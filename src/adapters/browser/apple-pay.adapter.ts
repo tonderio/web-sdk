@@ -48,11 +48,10 @@ const BUTTON_CLASS = 'tonder-apple-pay-button';
 const DEFAULT_BUTTON_CUSTOMIZATION = {
   type: 'check-out',
   style: 'black',
-  locale: 'en',
   width: '100%',
   height: '48px',
   border_radius: '8px',
-} as const satisfies Required<ApplePayButtonCustomization>;
+} as const satisfies Required<Omit<ApplePayButtonCustomization, 'locale'>>;
 
 /**
  * The CSS text for one rendered button.
@@ -94,11 +93,10 @@ function buildButtonCss(customization?: ApplePayButtonCustomization): string {
 /** Per field, not per object: `{ style: 'white' }` must not drop the other five. */
 function resolveButtonCustomization(
   customization?: ApplePayButtonCustomization,
-): Required<ApplePayButtonCustomization> {
+): Required<Omit<ApplePayButtonCustomization, 'locale'>> {
   return {
     type: customization?.type ?? DEFAULT_BUTTON_CUSTOMIZATION.type,
     style: customization?.style ?? DEFAULT_BUTTON_CUSTOMIZATION.style,
-    locale: customization?.locale ?? DEFAULT_BUTTON_CUSTOMIZATION.locale,
     width: customization?.width ?? DEFAULT_BUTTON_CUSTOMIZATION.width,
     height: customization?.height ?? DEFAULT_BUTTON_CUSTOMIZATION.height,
     border_radius:
@@ -201,8 +199,13 @@ export class BrowserApplePay implements ApplePayPort, ApplePayButtonPort {
 
     // The label is localized from the element's language. There is no
     // `-apple-pay-button-locale` property, despite the symmetry with
-    // `-apple-pay-button-type`/`-style` suggesting one.
-    button.lang = resolveButtonCustomization(options.customization).locale;
+    // `-apple-pay-button-type`/`-style` suggesting one. Left unset when the
+    // merchant supplies nothing: Apple then localizes from the shopper's own
+    // browser language, which beats any default we could pick for them.
+    // https://developer.apple.com/documentation/applepayontheweb/applepaybuttonlocale
+    if (options.customization?.locale) {
+      button.lang = options.customization.locale;
+    }
 
     // The listener is owned here so the click never crosses a merchant-visible
     // callback layer, which is how a gesture chain gets broken.
