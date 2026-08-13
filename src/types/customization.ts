@@ -136,8 +136,9 @@ export interface CardFieldsCustomization {
  * Every field is optional and merges over the SDK default on its own, so
  * supplying one leaves the other five alone.
  *
- * Defaults: type 'check-out', style 'black', locale 'en', width '100%',
- * height '48px', border_radius '8px'.
+ * Defaults: type 'check-out', style 'black', width '100%', height '48px',
+ * border_radius '8px'. `locale` has none — Apple localizes from the shopper's
+ * browser when it is absent.
  */
 export interface ApplePayButtonCustomization {
   /**
@@ -173,8 +174,8 @@ export interface ApplePayButtonCustomization {
   style?: 'black' | 'white' | 'white-outline';
   /**
    * BCP 47 tag for the label, e.g. 'es-MX'. Applied as the button's `lang`
-   * attribute: Apple has no `-apple-pay-button-locale` property. Defaults to
-   * 'en'; set it to serve the shopper's language.
+   * attribute: Apple has no `-apple-pay-button-locale` property. Omit it and
+   * Apple localizes from the shopper's browser language and region.
    */
   locale?: string;
   /**
