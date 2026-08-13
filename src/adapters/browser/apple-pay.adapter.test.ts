@@ -413,7 +413,6 @@ describe('BrowserApplePay.render', () => {
     expect(css).toContain('width: 100%');
     expect(css).toContain('height: 48px');
     expect(css).toContain('border-radius: 8px');
-    expect(container.querySelector('button')?.lang).toBe('en');
   });
 
   it('emits a button type the CSS property actually accepts', () => {
@@ -517,7 +516,10 @@ describe('BrowserApplePay.render', () => {
     expect(css).not.toContain('locale');
   });
 
-  it('falls back to the default locale when none is supplied', () => {
+  it('leaves `lang` unset when no locale is supplied', () => {
+    // Apple then localizes from the shopper's browser. Stamping a default here
+    // would override a per-shopper answer with a per-merchant guess.
+    // https://developer.apple.com/documentation/applepayontheweb/applepaybuttonlocale
     const container = mountContainer();
 
     new BrowserApplePay().render({
@@ -526,7 +528,7 @@ describe('BrowserApplePay.render', () => {
       onClick: vi.fn(),
     });
 
-    expect(container.querySelector('button')?.lang).toBe('en');
+    expect(container.querySelector('button')?.lang).toBe('');
   });
 
   it('throws APPLE_PAY_CONTAINER_NOT_FOUND when the selector matches nothing', () => {
