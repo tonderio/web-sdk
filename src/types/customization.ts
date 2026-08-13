@@ -132,11 +132,22 @@ export interface CardFieldsCustomization {
  * - rest:   https://developer.apple.com/documentation/applepayontheweb/styling-the-apple-pay-button-using-css
  * - locale: https://developer.apple.com/documentation/applepayontheweb/localizing-apple-pay-buttons-using-css
  */
+/**
+ * Every field is optional and merges over the SDK default on its own, so
+ * supplying one leaves the other five alone.
+ *
+ * Defaults: type 'check-out', style 'black', locale 'en', width '100%',
+ * height '48px', border_radius '8px'.
+ */
 export interface ApplePayButtonCustomization {
   /**
-   * Maps to -apple-pay-button-type. Defaults to 'buy'. Grouped by the Apple Pay
-   * on the Web version that introduced each value; an older Safari substitutes
-   * the plain button rather than failing.
+   * Maps to -apple-pay-button-type. Defaults to 'check-out'. Grouped by the
+   * Apple Pay on the Web version that introduced each value; an older Safari
+   * substitutes the plain button rather than failing.
+   *
+   * This is the set the CSS property accepts, which is NOT the same as the
+   * `ApplePayButtonType` enum — that has one more member, 'pay', reachable
+   * only through the `<apple-pay-button>` web component.
    */
   type?: // Version 2
     | 'buy'
@@ -162,7 +173,8 @@ export interface ApplePayButtonCustomization {
   style?: 'black' | 'white' | 'white-outline';
   /**
    * BCP 47 tag for the label, e.g. 'es-MX'. Applied as the button's `lang`
-   * attribute: Apple has no `-apple-pay-button-locale` property.
+   * attribute: Apple has no `-apple-pay-button-locale` property. Defaults to
+   * 'en'; set it to serve the shopper's language.
    */
   locale?: string;
   /**
@@ -175,7 +187,7 @@ export interface ApplePayButtonCustomization {
   height?: string;
   /**
    * Any CSS length. A SINGLE value: Apple applies the largest to all four
-   * corners. Defaults to 4pt.
+   * corners. Defaults to '8px'.
    */
   border_radius?: string;
 }

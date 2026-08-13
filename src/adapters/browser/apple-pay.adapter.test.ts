@@ -398,7 +398,7 @@ describe('BrowserApplePay.render', () => {
     expect(button.className).toBe('tonder-apple-pay-button');
   });
 
-  it('emits the WebKit appearance and both defaults when no customization is passed', () => {
+  it('emits the WebKit appearance and every default when no customization is passed', () => {
     const container = mountContainer();
 
     new BrowserApplePay().render({
@@ -408,9 +408,84 @@ describe('BrowserApplePay.render', () => {
 
     const css = emittedCss(container);
     expect(css).toContain('-webkit-appearance: -apple-pay-button');
-    expect(css).toContain('-apple-pay-button-type: buy');
+    expect(css).toContain('-apple-pay-button-type: check-out');
     expect(css).toContain('-apple-pay-button-style: black');
+    expect(css).toContain('width: 100%');
+    expect(css).toContain('height: 48px');
+    expect(css).toContain('border-radius: 8px');
+    expect(container.querySelector('button')?.lang).toBe('en');
   });
+
+  it('emits a button type the CSS property actually accepts', () => {
+    // WebKit drops an unrecognized value and renders the logo-only button, so
+    // a wrong default is invisible in code and wrong on screen.
+    const CSS_SUPPORTED_TYPES = [
+      'buy',
+      'donate',
+      'plain',
+      'set-up',
+      'book',
+      'check-out',
+      'subscribe',
+      'add-money',
+      'contribute',
+      'order',
+      'reload',
+      'rent',
+      'support',
+      'tip',
+      'top-up',
+      'continue',
+    ];
+
+    const container = mountContainer();
+
+    new BrowserApplePay().render({
+      containerId: CONTAINER_ID,
+      onClick: vi.fn(),
+    });
+
+    const emitted = emittedCss(container).match(
+      /-apple-pay-button-type: ([^;]+);/,
+    )?.[1];
+
+    expect(emitted).toBeDefined();
+    expect(CSS_SUPPORTED_TYPES).toContain(emitted);
+  });
+
+  it.each([
+    ['style', { style: 'white' as const }, '-apple-pay-button-style: white'],
+    ['type', { type: 'plain' as const }, '-apple-pay-button-type: plain'],
+    ['height', { height: '64px' }, 'height: 64px'],
+  ])(
+    'keeps every other default when only %s is supplied',
+    (_field, customization, expected) => {
+      const container = mountContainer();
+
+      new BrowserApplePay().render({
+        containerId: CONTAINER_ID,
+        customization,
+        onClick: vi.fn(),
+      });
+
+      const css = emittedCss(container);
+      expect(css).toContain(expected);
+
+      const untouched = [
+        '-apple-pay-button-type: check-out',
+        '-apple-pay-button-style: black',
+        'width: 100%',
+        'height: 48px',
+        'border-radius: 8px',
+      ].filter(
+        (declaration) => !expected.startsWith(declaration.split(':')[0]),
+      );
+
+      for (const declaration of untouched) {
+        expect(css).toContain(declaration);
+      }
+    },
+  );
 
   it('maps each supplied customization field onto its WebKit property', () => {
     const container = mountContainer();
@@ -442,7 +517,7 @@ describe('BrowserApplePay.render', () => {
     expect(css).not.toContain('locale');
   });
 
-  it('leaves `lang` unset when no locale is supplied, deferring to the page', () => {
+  it('falls back to the default locale when none is supplied', () => {
     const container = mountContainer();
 
     new BrowserApplePay().render({
@@ -451,24 +526,7 @@ describe('BrowserApplePay.render', () => {
       onClick: vi.fn(),
     });
 
-    expect(container.querySelector('button')?.lang).toBe('');
-  });
-
-  it('leaves an omitted height or border_radius at Apple’s own default', () => {
-    // Absent means ABSENT from the emitted CSS — not emitted as an empty or
-    // zero value, which would override Apple's default rather than defer to it.
-    const container = mountContainer();
-
-    new BrowserApplePay().render({
-      containerId: CONTAINER_ID,
-      customization: { type: 'donate' },
-      onClick: vi.fn(),
-    });
-
-    const css = emittedCss(container);
-    expect(css).not.toContain('width:');
-    expect(css).not.toContain('height:');
-    expect(css).not.toContain('border-radius');
+    expect(container.querySelector('button')?.lang).toBe('en');
   });
 
   it('throws APPLE_PAY_CONTAINER_NOT_FOUND when the selector matches nothing', () => {
