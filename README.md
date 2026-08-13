@@ -464,14 +464,16 @@ customization: {
 
 #### `customization.apple_pay_button`
 
-| Field           | Type     | Default             | Description                                                                         |
-| --------------- | -------- | ------------------- | ----------------------------------------------------------------------------------- |
-| `type`          | `string` | `buy`               | The button's call to action. See [Button types](#button-types).                     |
-| `style`         | `string` | `black`             | `black`, `white`, or `white-outline`.                                               |
-| `locale`        | `string` | the page's language | BCP 47 language tag for the label, for example `es-MX`.                             |
-| `width`         | `string` | Apple's width       | Any CSS length. See [Sizing](#sizing).                                              |
-| `height`        | `string` | Apple's height      | Any CSS length, for example `48px`. See [Sizing](#sizing).                          |
-| `border_radius` | `string` | `4pt`               | A single CSS length. `0` gives square corners; a large value gives a capsule shape. |
+| Field           | Type     | Default     | Description                                                                         |
+| --------------- | -------- | ----------- | ----------------------------------------------------------------------------------- |
+| `type`          | `string` | `check-out` | The button's call to action. See [Button types](#button-types).                     |
+| `style`         | `string` | `black`     | `black`, `white`, or `white-outline`.                                               |
+| `locale`        | `string` | `en`        | BCP 47 language tag for the label, for example `es-MX`.                             |
+| `width`         | `string` | `100%`      | Any CSS length. See [Sizing](#sizing).                                              |
+| `height`        | `string` | `48px`      | Any CSS length. See [Sizing](#sizing).                                              |
+| `border_radius` | `string` | `8px`       | A single CSS length. `0` gives square corners; a large value gives a capsule shape. |
+
+**Each field falls back on its own.** Passing `{ style: 'white' }` changes the style and leaves the other five at the defaults above — you never have to restate a value you did not want to change.
 
 `border_radius` takes one value only. Apple's button has a single corner radius, so if several are supplied it applies the largest to all four corners.
 

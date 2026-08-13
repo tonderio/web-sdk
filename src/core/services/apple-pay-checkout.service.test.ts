@@ -55,7 +55,9 @@ const APPLE_PAY: ApplePayConfig = {
   supports_debit: true,
 };
 
-function payment(overrides: Record<string, unknown> = {}) {
+// Generic so an override's own keys survive into the return type; a plain
+// `Record<string, unknown>` parameter contributes no known keys to the spread.
+function payment<T extends Record<string, unknown>>(overrides: T = {} as T) {
   return {
     amount: 150,
     currency: 'MXN',

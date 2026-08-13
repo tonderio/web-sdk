@@ -1,48 +1,132 @@
-const DEFAULT_PAYMENT_METHOD_LOGO =
-  'https://d35a75syrgujp0.cloudfront.net/payment_methods/store.png';
+const LOGO = 'https://d35a75syrgujp0.cloudfront.net/payment_methods/';
 
-const PAYMENT_METHOD_CATALOG: Record<string, { label: string; logo: string }> =
+const DEFAULT_PAYMENT_METHOD_LOGO = LOGO + 'store.png';
+
+/**
+ * Every method code the backend can return. An entry with no artwork of its own
+ * omits `logo`; it is still listed, because a miss here renders an unnamed
+ * option in the merchant's UI.
+ */
+const PAYMENT_METHOD_CATALOG: Record<string, { label: string; logo?: string }> =
   {
     card: {
       label: 'Card',
-      logo: 'https://d35a75syrgujp0.cloudfront.net/payment_methods/card.png',
+      logo: LOGO + 'card.png',
     },
     spei: {
       label: 'SPEI',
-      logo: 'https://d35a75syrgujp0.cloudfront.net/payment_methods/spei.png',
+      logo: LOGO + 'spei.png',
     },
     oxxopay: {
       label: 'Oxxo Pay',
-      logo: 'https://d35a75syrgujp0.cloudfront.net/payment_methods/oxxopay.png',
+      logo: LOGO + 'oxxopay.png',
     },
     oxxo: {
       label: 'Oxxo',
-      logo: 'https://d35a75syrgujp0.cloudfront.net/payment_methods/oxxo.png',
+      logo: LOGO + 'oxxo.png',
     },
     mercadopago: {
       label: 'Mercado Pago',
-      logo: 'https://d35a75syrgujp0.cloudfront.net/payment_methods/mercadopago.png',
+      logo: LOGO + 'mercadopago.png',
     },
     safetypaycash: {
       label: 'Paga en Efectivo',
-      logo: 'https://d35a75syrgujp0.cloudfront.net/payment_methods/cash_apm_sp.png',
+      logo: LOGO + 'cash_apm_sp.png',
     },
     safetypaytransfer: {
       label: 'Paga por Transferencia',
-      logo: 'https://d35a75syrgujp0.cloudfront.net/payment_methods/transfer_apm_sp.png',
+      logo: LOGO + 'transfer_apm_sp.png',
     },
     neosurf: {
       label: 'Neosurf',
-      logo: 'https://d35a75syrgujp0.cloudfront.net/payment_methods/neosurf.png',
+      logo: LOGO + 'neosurf.png',
     },
     paypal: {
       label: 'Paypal',
-      logo: 'https://d35a75syrgujp0.cloudfront.net/payment_methods/paypal.png',
+      logo: LOGO + 'paypal.png',
     },
     codi: {
       label: 'CoDi',
-      logo: 'https://d35a75syrgujp0.cloudfront.net/payment_methods/codi.png',
+      logo: LOGO + 'codi.png',
     },
+    soriana: { label: 'Soriana', logo: LOGO + 'soriana.png' },
+    comercialmexicana: {
+      label: 'Comercial Mexicana',
+      logo: LOGO + 'comercial_exicana.png',
+    },
+    bancomer: { label: 'Bancomer', logo: LOGO + 'bancomer.png' },
+    walmart: { label: 'Walmart', logo: LOGO + 'walmart.png' },
+    bodega: { label: 'Bodega Aurrera', logo: LOGO + 'bodega_aurrera.png' },
+    samsclub: { label: 'Sam´s Club', logo: LOGO + 'sams_club.png' },
+    superama: { label: 'Superama', logo: LOGO + 'superama.png' },
+    calimax: { label: 'Calimax', logo: LOGO + 'calimax.png' },
+    extra: { label: 'Tiendas Extra', logo: LOGO + 'tiendas_extra.png' },
+    circulok: { label: 'Círculo K', logo: LOGO + 'circulo_k.png' },
+    '7eleven': { label: '7 Eleven', logo: LOGO + '7_eleven.png' },
+    telecomm: { label: 'Telecomm', logo: LOGO + 'telecomm.png' },
+    banorte: { label: 'Banorte', logo: LOGO + 'banorte.png' },
+    benavides: {
+      label: 'Farmacias Benavides',
+      logo: LOGO + 'farmacias_benavides.png',
+    },
+    delahorro: {
+      label: 'Farmacias del Ahorro',
+      logo: LOGO + 'farmacias_ahorro.png',
+    },
+    elasturiano: { label: 'El Asturiano', logo: LOGO + 'asturiano.png' },
+    waldos: { label: 'Waldos', logo: LOGO + 'waldos.png' },
+    alsuper: { label: 'Alsuper', logo: LOGO + 'al_super.png' },
+    kiosko: { label: 'Kiosko', logo: LOGO + 'kiosko.png' },
+    stamaria: {
+      label: 'Farmacias Santa María',
+      logo: LOGO + 'farmacias_santa_maria.png',
+    },
+    lamasbarata: {
+      label: 'Farmacias la más barata',
+      logo: LOGO + 'farmacias_barata.png',
+    },
+    farmroma: { label: 'Farmacias Roma', logo: LOGO + 'farmacias_roma.png' },
+    farmunion: {
+      label: 'Pago en Farmacias Unión',
+      logo: LOGO + 'farmacias_union.png',
+    },
+    farmatodo: {
+      label: 'Pago en Farmacias Farmatodo',
+      logo: LOGO + 'farmacias_farmatodo.png',
+    },
+    sfdeasis: {
+      label: 'Pago en Farmacias San Francisco de Asís',
+      logo: LOGO + 'farmacias_san_francisco.png',
+    },
+    farm911: { label: 'Farmacias 911' },
+    farmeconomicas: { label: 'Farmacias Economicas' },
+    farmmedicity: { label: 'Farmacias Medicity' },
+    rianxeira: { label: 'Rianxeira' },
+    westernunion: { label: 'Western Union' },
+    zonapago: { label: 'Zona Pago' },
+    cajalosandes: { label: 'Caja Los Andes' },
+    cajapaita: { label: 'Caja Paita' },
+    cajasanta: { label: 'Caja Santa' },
+    cajasullana: { label: 'Caja Sullana' },
+    cajatrujillo: { label: 'Caja Trujillo' },
+    edpyme: { label: 'Edpyme' },
+    kasnet: { label: 'KasNet' },
+    norandino: { label: 'Norandino' },
+    qapaq: { label: 'Qapaq' },
+    raiz: { label: 'Raiz' },
+    payser: { label: 'Paysera' },
+    wunion: { label: 'Western Union' },
+    bancocontinental: { label: 'Banco Continental' },
+    gmoney: { label: 'Go money' },
+    gopay: { label: 'Go pay' },
+    wu: { label: 'Western Union' },
+    puntoshey: { label: 'Puntoshey' },
+    ampm: { label: 'Ampm' },
+    jumbomarket: { label: 'Jumbomarket' },
+    smelpueblo: { label: 'Smelpueblo' },
+    bam: { label: 'Bam' },
+    refacil: { label: 'Refacil' },
+    acyvalores: { label: 'Acyvalores' },
   };
 
 /** Backend namespace prefix for every Apple Pay catalog entry. */
@@ -76,10 +160,9 @@ export function getPaymentMethodCatalogDetails(method: string): {
   logo: string;
 } {
   const key = method.toLowerCase().replace(/\s+/g, '');
-  return (
-    PAYMENT_METHOD_CATALOG[key] ?? {
-      label: '',
-      logo: DEFAULT_PAYMENT_METHOD_LOGO,
-    }
-  );
+  const entry = PAYMENT_METHOD_CATALOG[key];
+  return {
+    label: entry?.label ?? '',
+    logo: entry?.logo ?? DEFAULT_PAYMENT_METHOD_LOGO,
+  };
 }
