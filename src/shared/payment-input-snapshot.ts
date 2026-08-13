@@ -1,3 +1,5 @@
+import type { BillingAddress } from './types';
+
 /**
  * Detaches charge data from the object the merchant handed in.
  *
@@ -13,7 +15,9 @@
 export function snapshotPaymentInput<
   T extends {
     metadata?: Record<string, unknown>;
-    billing_address?: Record<string, unknown>;
+    // The declared shape, not `Record<string, unknown>`: an interface has no
+    // implicit index signature, so that bound rejects every real caller.
+    billing_address?: BillingAddress;
     payment_method?: unknown;
   },
 >(input: T): T {

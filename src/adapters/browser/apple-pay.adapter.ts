@@ -36,8 +36,23 @@ function getApplePaySessionCtor(): ApplePaySessionCtor | undefined {
 }
 
 const BUTTON_CLASS = 'tonder-apple-pay-button';
-const DEFAULT_BUTTON_TYPE = 'buy';
-const DEFAULT_BUTTON_STYLE = 'black';
+/**
+ * Applied field by field, so customizing one leaves the rest alone.
+ *
+ * `type` is limited to what `-apple-pay-button-type` accepts, which is not the
+ * `ApplePayButtonType` enum: that has `pay` too, and only the web component
+ * reads it. WebKit drops a value it does not recognize and silently renders the
+ * logo-only button.
+ * https://developer.apple.com/documentation/applepayontheweb/displaying-apple-pay-buttons-using-css
+ */
+const DEFAULT_BUTTON_CUSTOMIZATION = {
+  type: 'check-out',
+  style: 'black',
+  locale: 'en',
+  width: '100%',
+  height: '48px',
+  border_radius: '8px',
+} as const satisfies Required<ApplePayButtonCustomization>;
 
 /**
  * The CSS text for one rendered button.
@@ -48,9 +63,6 @@ const DEFAULT_BUTTON_STYLE = 'black';
  * and `-apple-pay-button-*` are exactly those, so an inline-style
  * implementation could only ever be verified by a test asserting `''`.
  *
- * A field the merchant omitted is left OUT of the text entirely, so Apple's own
- * default applies instead of being overridden by ours.
- *
  * No `@supports not (-webkit-appearance: -apple-pay-button)` fallback, because
  * it is unreachable: that appearance ships in Apple Pay on the Web v1, and
  * `canUseApplePay()` already gates on v3. The hand-drawn fallback in Apple's
@@ -60,28 +72,39 @@ const DEFAULT_BUTTON_STYLE = 'black';
  * https://developer.apple.com/documentation/applepayontheweb/apple-pay-on-the-web-version-history
  */
 function buildButtonCss(customization?: ApplePayButtonCustomization): string {
+  const resolved = resolveButtonCustomization(customization);
+
   const declarations = [
     // Renders the native Apple mark in WebKit. Whether it does so is Apple's
     // business and is verified on a device, not here.
     '-webkit-appearance: -apple-pay-button',
-    `-apple-pay-button-type: ${customization?.type ?? DEFAULT_BUTTON_TYPE}`,
-    `-apple-pay-button-style: ${customization?.style ?? DEFAULT_BUTTON_STYLE}`,
+    `-apple-pay-button-type: ${resolved.type}`,
+    `-apple-pay-button-style: ${resolved.style}`,
     'display: inline-block',
     'cursor: pointer',
     'border: 0',
+    `width: ${resolved.width}`,
+    `height: ${resolved.height}`,
+    `border-radius: ${resolved.border_radius}`,
   ];
 
-  if (customization?.width) {
-    declarations.push(`width: ${customization.width}`);
-  }
-  if (customization?.height) {
-    declarations.push(`height: ${customization.height}`);
-  }
-  if (customization?.border_radius) {
-    declarations.push(`border-radius: ${customization.border_radius}`);
-  }
-
   return `.${BUTTON_CLASS} {\n  ${declarations.join(';\n  ')};\n}\n`;
+}
+
+/** Per field, not per object: `{ style: 'white' }` must not drop the other five. */
+function resolveButtonCustomization(
+  customization?: ApplePayButtonCustomization,
+): Required<ApplePayButtonCustomization> {
+  return {
+    type: customization?.type ?? DEFAULT_BUTTON_CUSTOMIZATION.type,
+    style: customization?.style ?? DEFAULT_BUTTON_CUSTOMIZATION.style,
+    locale: customization?.locale ?? DEFAULT_BUTTON_CUSTOMIZATION.locale,
+    width: customization?.width ?? DEFAULT_BUTTON_CUSTOMIZATION.width,
+    height: customization?.height ?? DEFAULT_BUTTON_CUSTOMIZATION.height,
+    border_radius:
+      customization?.border_radius ??
+      DEFAULT_BUTTON_CUSTOMIZATION.border_radius,
+  };
 }
 
 export class BrowserApplePay implements ApplePayPort, ApplePayButtonPort {
@@ -179,9 +202,7 @@ export class BrowserApplePay implements ApplePayPort, ApplePayButtonPort {
     // The label is localized from the element's language. There is no
     // `-apple-pay-button-locale` property, despite the symmetry with
     // `-apple-pay-button-type`/`-style` suggesting one.
-    if (options.customization?.locale) {
-      button.lang = options.customization.locale;
-    }
+    button.lang = resolveButtonCustomization(options.customization).locale;
 
     // The listener is owned here so the click never crosses a merchant-visible
     // callback layer, which is how a gesture chain gets broken.
