@@ -17,6 +17,14 @@ export interface TonderBaseUrls {
   acquirer: string;
   /** Hosted payment/authentication page host used for embedded or redirect flows. */
   payflow: string;
+  /**
+   * Static asset host serving payment-method artwork.
+   *
+   * Production stays on the legacy CloudFront distribution: merchants run
+   * pinned copies of this SDK, and that distribution keeps serving them until
+   * they upgrade. Only the non-production modes point at the new host.
+   */
+  assets: string;
 }
 
 const ENV_URLS: Record<TonderMode, TonderBaseUrls> = {
@@ -24,11 +32,13 @@ const ENV_URLS: Record<TonderMode, TonderBaseUrls> = {
     api: 'https://app.tonder.io',
     acquirer: 'https://api.tonder.io',
     payflow: 'https://payflow.tonder.io',
+    assets: 'https://d35a75syrgujp0.cloudfront.net',
   },
   stage: {
     api: 'https://stage.tonder.io',
     acquirer: 'https://api-stage.tonder.io',
     payflow: 'https://stage-payflow.tonder.io',
+    assets: 'https://static.staging.tonder.io',
   },
   // There is no dedicated sandbox infrastructure — `sandbox` is an alias for the
   // stage environment (all hosts point at stage). Kept as a distinct, friendlier
@@ -37,6 +47,7 @@ const ENV_URLS: Record<TonderMode, TonderBaseUrls> = {
     api: 'https://stage.tonder.io',
     acquirer: 'https://api-stage.tonder.io',
     payflow: 'https://stage-payflow.tonder.io',
+    assets: 'https://static.staging.tonder.io',
   },
 };
 

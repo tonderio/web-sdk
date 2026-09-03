@@ -969,6 +969,7 @@ export class Tonder {
     try {
       return toPublicPaymentMethods(
         await this.#directApiService.getPaymentMethodCatalog(),
+        this.#env.assets,
       );
     } catch (error) {
       if (error instanceof AppError) throw error;
