@@ -7,6 +7,7 @@ import { asHttpPort } from './test-support/http.mock';
 import type { TokenizerPort } from './ports/tokenizer.port';
 import type { BackendTransactionResponse } from './models/transaction.model';
 import type { BusinessConfig } from './models/business.model';
+import { resolveEnv } from './shared/config/env';
 
 function business(): BusinessConfig {
   return {
@@ -220,7 +221,7 @@ describe('public snake_case contract', () => {
       id: 7,
       payment_method: 'oxxopay',
       label: 'Oxxo Pay',
-      logo: 'https://d35a75syrgujp0.cloudfront.net/payment_methods/oxxopay.png',
+      logo: `${resolveEnv('sandbox').assets}/payment_methods/oxxopay.png`,
       category: 'cash',
     });
     expect('paymentMethod' in method).toBe(false);

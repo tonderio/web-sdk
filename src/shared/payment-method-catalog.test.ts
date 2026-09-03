@@ -3,9 +3,12 @@ import {
   isApplePayCatalogMethod,
   getPaymentMethodCatalogDetails,
 } from './payment-method-catalog';
+import { resolveEnv } from './config/env';
 
-const STORE_LOGO =
-  'https://d35a75syrgujp0.cloudfront.net/payment_methods/store.png';
+const PRODUCTION_ASSETS = resolveEnv('production').assets;
+const SANDBOX_ASSETS = resolveEnv('sandbox').assets;
+
+const STORE_LOGO = `${PRODUCTION_ASSETS}/payment_methods/store.png`;
 
 const DEBIT = 'apple_pay_debit_card';
 const CREDIT = 'apple_pay_credit_card';
@@ -42,26 +45,47 @@ describe('getPaymentMethodCatalogDetails', () => {
   ])(
     'names %s, which used to render as an unlabelled option',
     (code, label) => {
-      expect(getPaymentMethodCatalogDetails(code).label).toBe(label);
+      expect(
+        getPaymentMethodCatalogDetails(code, PRODUCTION_ASSETS).label,
+      ).toBe(label);
     },
   );
 
   it('normalizes case and whitespace before the lookup', () => {
-    expect(getPaymentMethodCatalogDetails('Oxxo Pay').label).toBe('Oxxo Pay');
-    expect(getPaymentMethodCatalogDetails('  SPEI ').label).toBe('SPEI');
+    expect(
+      getPaymentMethodCatalogDetails('Oxxo Pay', PRODUCTION_ASSETS).label,
+    ).toBe('Oxxo Pay');
+    expect(
+      getPaymentMethodCatalogDetails('  SPEI ', PRODUCTION_ASSETS).label,
+    ).toBe('SPEI');
   });
 
   it('serves the store logo for a known method that has no artwork', () => {
-    expect(getPaymentMethodCatalogDetails('KASNET')).toEqual({
-      label: 'KasNet',
+    expect(getPaymentMethodCatalogDetails('KASNET', PRODUCTION_ASSETS)).toEqual(
+      {
+        label: 'KasNet',
+        logo: STORE_LOGO,
+      },
+    );
+  });
+
+  it('serves an empty label and the store logo for a method it does not know', () => {
+    expect(
+      getPaymentMethodCatalogDetails('SOMETHING_NEW', PRODUCTION_ASSETS),
+    ).toEqual({
+      label: '',
       logo: STORE_LOGO,
     });
   });
 
-  it('serves an empty label and the store logo for a method it does not know', () => {
-    expect(getPaymentMethodCatalogDetails('SOMETHING_NEW')).toEqual({
-      label: '',
-      logo: STORE_LOGO,
-    });
+  it('hangs the logo off the asset host the environment resolves to', () => {
+    // Production keeps serving from the legacy CloudFront distribution for
+    // merchants running pinned copies of this SDK; every other mode moves.
+    expect(
+      getPaymentMethodCatalogDetails('OXXOPAY', PRODUCTION_ASSETS).logo,
+    ).toBe(`${PRODUCTION_ASSETS}/payment_methods/oxxopay.png`);
+    expect(getPaymentMethodCatalogDetails('OXXOPAY', SANDBOX_ASSETS).logo).toBe(
+      `${SANDBOX_ASSETS}/payment_methods/oxxopay.png`,
+    );
   });
 });
