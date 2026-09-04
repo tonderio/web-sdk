@@ -39,8 +39,14 @@ export interface BackendPaymentMethodsPage {
 }
 
 /** Pure snake→camel projection of one payment-method record. */
-function mapPaymentMethod(raw: BackendPaymentMethod): PaymentMethodInfo {
-  const catalog = getPaymentMethodCatalogDetails(raw.payment_method);
+function mapPaymentMethod(
+  raw: BackendPaymentMethod,
+  assetsBaseUrl: string,
+): PaymentMethodInfo {
+  const catalog = getPaymentMethodCatalogDetails(
+    raw.payment_method,
+    assetsBaseUrl,
+  );
   return {
     id: raw.pk,
     payment_method: raw.payment_method,
@@ -64,11 +70,15 @@ function mapPaymentMethod(raw: BackendPaymentMethod): PaymentMethodInfo {
  *
  * The `apple_pay_*` entries keep arriving from the backend, so this filter is
  * load-bearing regardless of how Apple Pay availability is decided elsewhere.
+ *
+ * `assetsBaseUrl` is the environment's resolved static asset host, used to build
+ * the fallback logo URL for a record the backend sends without artwork.
  */
 export function toPublicPaymentMethods(
   raw: readonly BackendPaymentMethod[],
+  assetsBaseUrl: string,
 ): PaymentMethodInfo[] {
   return raw
     .filter((method) => !isApplePayCatalogMethod(method.payment_method))
-    .map(mapPaymentMethod);
+    .map((method) => mapPaymentMethod(method, assetsBaseUrl));
 }

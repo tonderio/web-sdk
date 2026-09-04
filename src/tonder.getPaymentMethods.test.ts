@@ -5,6 +5,10 @@ import { ErrorKeyEnum } from './shared/errors/ErrorKeyEnum';
 import type { HttpPort, HttpRequestOptions } from './ports/http.port';
 import { asHttpPort } from './test-support/http.mock';
 import type { TonderConfig } from './shared/types';
+import { resolveEnv } from './shared/config/env';
+
+const SANDBOX_ASSETS = resolveEnv('sandbox').assets;
+const PRODUCTION_ASSETS = resolveEnv('production').assets;
 
 const CONFIG: TonderConfig = {
   api_key: 'pk_test_123',
@@ -43,7 +47,7 @@ describe('Tonder.getPaymentMethods', () => {
         id: 7,
         payment_method: 'oxxopay',
         label: 'Oxxo Pay',
-        logo: 'https://d35a75syrgujp0.cloudfront.net/payment_methods/oxxopay.png',
+        logo: `${SANDBOX_ASSETS}/payment_methods/oxxopay.png`,
         category: 'cash',
       },
     ]);
@@ -152,7 +156,7 @@ describe('Tonder.getPaymentMethods — Apple Pay entries are never returned', ()
       id: 7,
       payment_method: 'oxxopay',
       label: 'Oxxo Pay',
-      logo: 'https://d35a75syrgujp0.cloudfront.net/payment_methods/oxxopay.png',
+      logo: `${SANDBOX_ASSETS}/payment_methods/oxxopay.png`,
       category: 'cash',
     });
   });
@@ -168,7 +172,7 @@ describe('Tonder.getPaymentMethods — Apple Pay entries are never returned', ()
         id: 7,
         payment_method: 'oxxopay',
         label: 'Oxxo Pay',
-        logo: 'https://d35a75syrgujp0.cloudfront.net/payment_methods/oxxopay.png',
+        logo: `${SANDBOX_ASSETS}/payment_methods/oxxopay.png`,
         category: 'cash',
       },
     ]);
@@ -203,5 +207,25 @@ describe('Tonder.getPaymentMethods — Apple Pay entries are never returned', ()
     // A second call fetches again rather than replaying the first result.
     await tonder.getPaymentMethods();
     expect(catalogCalls).toBe(2);
+  });
+
+  it('resolves the logo host from config.environment', async () => {
+    // Same catalog record, two modes: production keeps serving the legacy
+    // CloudFront distribution for merchants on pinned copies of this SDK.
+    async function logoFor(environment: TonderConfig['environment']) {
+      const tonder = _createTonderWithDeps({
+        config: { ...CONFIG, environment },
+        http: catalogHttp(backendPaymentMethods()),
+      });
+      const [method] = await tonder.getPaymentMethods();
+      return method?.logo;
+    }
+
+    await expect(logoFor('production')).resolves.toBe(
+      `${PRODUCTION_ASSETS}/payment_methods/oxxopay.png`,
+    );
+    await expect(logoFor('sandbox')).resolves.toBe(
+      `${SANDBOX_ASSETS}/payment_methods/oxxopay.png`,
+    );
   });
 });
