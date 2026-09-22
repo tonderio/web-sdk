@@ -7,11 +7,11 @@
 
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
-import { extname, join, normalize, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { extname, join, normalize, resolve, sep } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const here = fileURLToPath(new URL('.', import.meta.url));
-const repoRoot = resolve(here, '..', '..');
+export const repoRoot = resolve(here, '..', '..');
 const fixtureDir = join(repoRoot, 'e2e', 'fixture');
 
 const PORT = Number(process.env.E2E_PORT ?? 4321);
@@ -25,20 +25,41 @@ const MIME = {
   '.map': 'application/json; charset=utf-8',
 };
 
-// `dist/` is served at `/dist/...` so the fixture's `../../dist/tonder-web-sdk.js`
-// relative path resolves; everything else is served from the fixture dir.
-function resolvePath(urlPath) {
+/**
+ * Maps a request target to a file under the repo root, or `null` when it
+ * escapes. `dist/` is served at `/dist/...` so the fixture's
+ * `../../dist/tonder-web-sdk.js` relative path resolves; everything else is
+ * served from the fixture dir.
+ *
+ * Containment is a path-segment boundary, NOT a string prefix. A request
+ * target is not guaranteed to start with `/`: Node's HTTP parser accepts the
+ * absolute form (`GET http://host/... HTTP/1.1`) and hands `req.url` over
+ * verbatim, scheme included. That normalizes to a RELATIVE path, so its
+ * leading `..` survive instead of collapsing at the filesystem root, and
+ * `join` then walks above the fixture dir. A string prefix accepts the escape
+ * whenever the result lands in a sibling whose name merely starts with the
+ * root's — `<repoRoot>-anything` is a prefix match but is not inside the root.
+ */
+export function resolveRequestPath(urlPath) {
   const clean = normalize(decodeURIComponent(urlPath.split('?')[0]));
-  if (clean === '/' || clean === '') return join(fixtureDir, 'checkout.html');
-  if (clean.startsWith('/dist/')) return join(repoRoot, clean);
-  return join(fixtureDir, clean);
+
+  let candidate;
+  if (clean === '/' || clean === '')
+    candidate = join(fixtureDir, 'checkout.html');
+  else if (clean.startsWith('/dist/')) candidate = join(repoRoot, clean);
+  else candidate = join(fixtureDir, clean);
+
+  const filePath = resolve(candidate);
+  const contained =
+    filePath === repoRoot || filePath.startsWith(`${repoRoot}${sep}`);
+
+  return contained ? filePath : null;
 }
 
 const server = createServer(async (req, res) => {
   try {
-    const filePath = resolvePath(req.url ?? '/');
-    // Guard against path traversal outside the repo root.
-    if (!filePath.startsWith(repoRoot)) {
+    const filePath = resolveRequestPath(req.url ?? '/');
+    if (filePath === null) {
       res.writeHead(403).end('Forbidden');
       return;
     }
@@ -52,6 +73,11 @@ const server = createServer(async (req, res) => {
   }
 });
 
-server.listen(PORT, () => {
-  console.log(`[e2e] static server on http://localhost:${PORT}`);
-});
+// Importable for tests: only the direct `node e2e/support/server.mjs` run that
+// Playwright's `webServer` spawns binds the port.
+const invokedPath = process.argv[1];
+if (invokedPath && pathToFileURL(invokedPath).href === import.meta.url) {
+  server.listen(PORT, () => {
+    console.log(`[e2e] static server on http://localhost:${PORT}`);
+  });
+}
