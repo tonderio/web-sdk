@@ -46,6 +46,7 @@ Browser TypeScript SDK for accepting payments with Tonder. It provides secure ca
   - [`tonder.getTransaction(id)`](#tondergettransactionid)
   - [`tonder.enrollCard()`](#tonderenrollcard)
   - [`tonder.getCustomerCards()`](#tondergetcustomercards)
+  - [`tonder.canSaveCards()`](#tondercansavecards)
   - [`tonder.removeCustomerCard(card_id)`](#tonderremovecustomercardcard_id)
   - [`tonder.getPaymentMethods()`](#tondergetpaymentmethods)
   - [`tonder.getPaymentMethodBanks()`](#tondergetpaymentmethodbanks)
@@ -255,7 +256,7 @@ const tonder = createTonder({
 | -------------------------------- | -------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
 | `api_key`                        | Yes                                    | Public Tonder key for browser integrations.                                                                    |
 | `environment`                    | Yes                                    | `'stage'` for testing, `'production'` when you go live.                                                        |
-| `session.customer`               | For `pay()` and saved-card operations  | Customer identity. Omit for read-only return pages that only call `getTransaction()`.                          |
+| `session.customer`               | For `pay()` and saved-card operations  | Customer identity. Include `phone` if your business identifies customers by phone. Omit for read-only pages.   |
 | `session.secure_token`           | For saved-card/Card-on-File operations | Short-lived token minted by your backend. See [Backend secure token endpoint](#backend-secure-token-endpoint). |
 | `presentation_mode`              | No                                     | `'redirect'` by default, or `'embedded'` for SDK-owned modal presentation.                                     |
 | `events.payment`                 | No                                     | Payment-result callbacks. See below.                                                                           |
@@ -544,6 +545,8 @@ Card on File is what makes that field appear: it lets a business store a shopper
 
 Which operations need `session.secure_token`, and why, is listed once in [Backend secure token endpoint](#backend-secure-token-endpoint).
 
+**Phone-identified businesses.** Some businesses identify their customers by phone instead of email. For those, saved cards need `session.customer.phone` (a blank value counts as missing). Without it, saved cards are unavailable: [`tonder.canSaveCards()`](#tondercansavecards) returns `false`, `getCustomerCards()`, `enrollCard()` and `pay()` with `{ type: 'saved_card' }` throw `SAVE_CARDS_UNAVAILABLE` before any request, and `pay()` with `{ type: 'card' }` still charges the card but does not save it, logging a `console.warn`. `removeCustomerCard()` is not affected. Businesses that identify customers by email never depend on `phone`.
+
 ### Presentation mode
 
 When a payment requires a hosted step, the SDK uses `presentation_mode`:
@@ -704,7 +707,7 @@ const transaction = await tonder.pay({
 
 ### Saved card
 
-Saved-card operations require both `session.customer` and `session.secure_token`. If you are not sure whether your business has Card on File enabled, confirm it with the Tonder team before launching this flow.
+Saved-card operations require both `session.customer` and `session.secure_token`. If your business identifies customers by phone, `session.customer.phone` is required too: check [`tonder.canSaveCards()`](#tondercansavecards) before showing saved cards. If you are not sure whether your business has Card on File enabled, confirm it with the Tonder team before launching this flow.
 
 ```ts
 const tonder = createTonder({
@@ -744,7 +747,7 @@ const transaction = await tonder.pay({
 
 ### Save a new card
 
-Card enrollment requires both `session.customer` and `session.secure_token`. Mint the secure token on your backend before creating the SDK instance.
+Card enrollment requires both `session.customer` and `session.secure_token`, plus `session.customer.phone` when your business identifies customers by phone (see [`tonder.canSaveCards()`](#tondercansavecards)). Mint the secure token on your backend before creating the SDK instance.
 
 ```ts
 const card_fields = tonder.create('card_fields');
@@ -1278,6 +1281,8 @@ Creates a payment.
 
 For `{ type: 'saved_card', card_id }`, `tonder.pay()` requires `session.secure_token` because the SDK must look up the saved card and may collect CVV/update Card-on-File data before charging it. For `{ type: 'card' }`, `session.secure_token` is only required when Card on File is enabled for the business and the SDK must save the new card before processing the payment.
 
+When your business identifies customers by phone and `session.customer.phone` is missing or blank, saved cards are unavailable ([`tonder.canSaveCards()`](#tondercansavecards)). A `{ type: 'saved_card' }` payment then throws `SAVE_CARDS_UNAVAILABLE` before any request. A `{ type: 'card' }` payment on a Card on File business skips the card save, is charged as a regular card, and logs one `console.warn` explaining that the card was not saved. Without Card on File nothing changes and no warning is logged.
+
 #### Request
 
 ```ts
@@ -1440,6 +1445,7 @@ APM/SPEI responses may include settlement fields:
 | `MISSING_CUSTOMER`                                              | `session.customer` was not configured.                                                                                                                                    |
 | `SECURE_TOKEN_REQUIRED`                                         | `session.secure_token` was not configured, and this charge stores a card: `{ type: 'saved_card' }`, or `{ type: 'card' }` when Card on File is enabled for your business. |
 | `INVALID_PAYMENT_REQUEST`                                       | `amount`, `return_url`, or `payment_method` is invalid.                                                                                                                   |
+| `SAVE_CARDS_UNAVAILABLE`                                        | `{ type: 'saved_card' }` on a business that identifies customers by phone, and `session.customer.phone` is missing or blank.                                              |
 | `INVALID_APM_CONFIG`                                            | `safetypaycash` or `safetypaytransfer` is missing `config.country`, `config.channel`, or `config.bank_ids`.                                                               |
 | `MOUNT_COLLECT_ERROR`                                           | Card fields cannot be collected.                                                                                                                                          |
 | `PAYMENT_PROCESS_ERROR`                                         | The payment request fails.                                                                                                                                                |
@@ -1492,6 +1498,7 @@ interface EnrollResult {
 | -------------------------- | --------------------------------------------------- |
 | `NOT_INITIALIZED`          | `tonder.init()` has not completed.                  |
 | `MISSING_CUSTOMER`         | `session.customer` was not configured.              |
+| `SAVE_CARDS_UNAVAILABLE`   | `session.customer.phone` is required but missing.   |
 | `SECURE_TOKEN_REQUIRED`    | `session.secure_token` was not configured.          |
 | `MOUNT_COLLECT_ERROR`      | Card fields cannot be collected.                    |
 | `CUSTOMER_OPERATION_ERROR` | Customer registration/fetch fails.                  |
@@ -1537,13 +1544,28 @@ Example:
 
 #### Throws
 
-| Code                       | When                                       |
-| -------------------------- | ------------------------------------------ |
-| `NOT_INITIALIZED`          | `tonder.init()` has not completed.         |
-| `MISSING_CUSTOMER`         | `session.customer` was not configured.     |
-| `SECURE_TOKEN_REQUIRED`    | `session.secure_token` was not configured. |
-| `CUSTOMER_OPERATION_ERROR` | Customer registration/fetch fails.         |
-| `FETCH_CARDS_ERROR`        | Saved cards cannot be retrieved.           |
+| Code                       | When                                              |
+| -------------------------- | ------------------------------------------------- |
+| `NOT_INITIALIZED`          | `tonder.init()` has not completed.                |
+| `MISSING_CUSTOMER`         | `session.customer` was not configured.            |
+| `SAVE_CARDS_UNAVAILABLE`   | `session.customer.phone` is required but missing. |
+| `SECURE_TOKEN_REQUIRED`    | `session.secure_token` was not configured.        |
+| `CUSTOMER_OPERATION_ERROR` | Customer registration/fetch fails.                |
+| `FETCH_CARDS_ERROR`        | Saved cards cannot be retrieved.                  |
+
+### `tonder.canSaveCards()`
+
+Reports whether saved cards can be used for `session.customer`.
+
+```ts
+if (tonder.canSaveCards()) {
+  const cards = await tonder.getCustomerCards();
+}
+```
+
+Returns `false` only when your business identifies customers by phone and `session.customer.phone` is missing or blank. In every other case, including businesses that identify customers by email, it returns `true`. Synchronous, no network, and never throws. Before `await tonder.init()` it returns `false`, because the business setting is not known yet.
+
+When it returns `false`, `getCustomerCards()`, `enrollCard()` and `pay()` with `{ type: 'saved_card' }` throw `SAVE_CARDS_UNAVAILABLE` before any request. `removeCustomerCard()` is not affected.
 
 ### `tonder.removeCustomerCard(card_id)`
 
@@ -1850,15 +1872,16 @@ Use `error.code` for branching. Do not parse `error.message`; messages are for d
 
 ### Customer and saved-card credentials
 
-| Code                       | When it happens                                                      | Returned by                                                                                                                                                                                 | How to fix                                                                                        |
-| -------------------------- | -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| `MISSING_CUSTOMER`         | `session.customer` is required but was not provided.                 | `tonder.pay()`, `tonder.enrollCard()`, `tonder.getCustomerCards()`, `tonder.removeCustomerCard()`                                                                                           | Create the SDK with `session.customer.email` and optional customer fields.                        |
-| `SECURE_TOKEN_REQUIRED`    | Saved-card/Card-on-File operations require `session.secure_token`.   | `tonder.enrollCard()`, `tonder.getCustomerCards()`, `tonder.removeCustomerCard()`, `tonder.pay()` with `{ type: 'saved_card' }`, `tonder.pay()` with `{ type: 'card' }` when COF is enabled | Mint a secure token on your backend and pass it in `createTonder({ session: { secure_token } })`. |
-| `CUSTOMER_OPERATION_ERROR` | Customer registration/fetch failed.                                  | Saved-card operations and card enrollment                                                                                                                                                   | Verify customer data and backend availability.                                                    |
-| `FETCH_CARDS_ERROR`        | Saved cards could not be retrieved.                                  | `tonder.getCustomerCards()`, saved-card `pay()` lookup                                                                                                                                      | Verify `session.customer`, `session.secure_token`, and customer ownership.                        |
-| `SAVE_CARD_ERROR`          | A new or existing card could not be saved.                           | `tonder.enrollCard()`, `tonder.pay()` when a card must be saved for COF                                                                                                                     | Ask the shopper to verify card data or retry; inspect `error.details` for backend context.        |
-| `REMOVE_CARD_ERROR`        | A saved card could not be removed.                                   | `tonder.removeCustomerCard()`, rollback after failed auto-enrollment                                                                                                                        | Retry the removal or reconcile from your backend/admin tools.                                     |
-| `CARD_ON_FILE_DECLINED`    | Card-on-File enrollment/authorization was declined by the processor. | `tonder.enrollCard()`, COF/saved-card `tonder.pay()` flows                                                                                                                                  | Ask for another card or corrected card details.                                                   |
+| Code                       | When it happens                                                                              | Returned by                                                                                                                                                                                 | How to fix                                                                                        |
+| -------------------------- | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `MISSING_CUSTOMER`         | `session.customer` is required but was not provided.                                         | `tonder.pay()`, `tonder.enrollCard()`, `tonder.getCustomerCards()`, `tonder.removeCustomerCard()`                                                                                           | Create the SDK with `session.customer.email` and optional customer fields.                        |
+| `SAVE_CARDS_UNAVAILABLE`   | The business identifies customers by phone and `session.customer.phone` is missing or blank. | `tonder.enrollCard()`, `tonder.getCustomerCards()`, `tonder.pay()` with `{ type: 'saved_card' }`                                                                                            | Pass `session.customer.phone`, or hide saved-card UI when `tonder.canSaveCards()` is `false`.     |
+| `SECURE_TOKEN_REQUIRED`    | Saved-card/Card-on-File operations require `session.secure_token`.                           | `tonder.enrollCard()`, `tonder.getCustomerCards()`, `tonder.removeCustomerCard()`, `tonder.pay()` with `{ type: 'saved_card' }`, `tonder.pay()` with `{ type: 'card' }` when COF is enabled | Mint a secure token on your backend and pass it in `createTonder({ session: { secure_token } })`. |
+| `CUSTOMER_OPERATION_ERROR` | Customer registration/fetch failed.                                                          | Saved-card operations and card enrollment                                                                                                                                                   | Verify customer data and backend availability.                                                    |
+| `FETCH_CARDS_ERROR`        | Saved cards could not be retrieved.                                                          | `tonder.getCustomerCards()`, saved-card `pay()` lookup                                                                                                                                      | Verify `session.customer`, `session.secure_token`, and customer ownership.                        |
+| `SAVE_CARD_ERROR`          | A new or existing card could not be saved.                                                   | `tonder.enrollCard()`, `tonder.pay()` when a card must be saved for COF                                                                                                                     | Ask the shopper to verify card data or retry; inspect `error.details` for backend context.        |
+| `REMOVE_CARD_ERROR`        | A saved card could not be removed.                                                           | `tonder.removeCustomerCard()`, rollback after failed auto-enrollment                                                                                                                        | Retry the removal or reconcile from your backend/admin tools.                                     |
+| `CARD_ON_FILE_DECLINED`    | Card-on-File enrollment/authorization was declined by the processor.                         | `tonder.enrollCard()`, COF/saved-card `tonder.pay()` flows                                                                                                                                  | Ask for another card or corrected card details.                                                   |
 
 ### Payment request and processing
 

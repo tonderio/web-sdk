@@ -32,7 +32,7 @@ Out of scope: other SDKs, backend, collecting the phone.
 - [x] **T1 — Availability rule.** `BusinessConfig` field + normalization, private rule, public `canSaveCards()`, new error key/message `SAVE_CARDS_UNAVAILABLE`. Route: delegated (writer).
 - [x] **T2 — Guard explicit saved-card calls.** `getCustomerCards()`, `enrollCard()`, `pay({ type: "saved_card" })` reject before any request. Route: delegated (writer).
 - [x] **T3 — Card payment with Card on File.** Skip implicit enrollment + `console.warn` only when Card on File is active. Route: delegated (writer).
-- [ ] **T4 — Docs.** README: `canSaveCards()`, phone rule, error code. Route: delegated (writer).
+- [x] **T4 — Docs.** README: `canSaveCards()`, phone rule, error code. Route: delegated (writer).
 
 Route evidence: the change touches 2+ non-trivial files (`src/tonder.ts`, `src/models/business.model.ts`, `src/shared/errors/*`, tests, README) → writer trigger.
 
@@ -52,10 +52,12 @@ AC-1 to AC-9 as published in TEC-1101.
 - **T2 done.** Commit: f3bad57. RED: 10 tests in `src/tonder.saveCardsUnavailable.test.ts` failed (getCustomerCards / enrollCard COF off+on / pay(saved_card) COF off+on, each for missing and blank phone); the 17 other cases (precedence, available matrix, removeCustomerCard unchanged) passed as regression guards. GREEN after implementation. Checks: `npm test` 58 files / 697 tests passed; `npm run typecheck` clean; `npm run build` clean.
   - Decisions: guard `assertSaveCardsAvailable()` = NOT_INITIALIZED, MISSING_CUSTOMER, SAVE_CARDS_UNAVAILABLE, so it rejects before the customer-registration request and before the secure-token check. In `pay` it runs only for `saved_card`, after `assertValidPayInput` (precedence: NOT_INITIALIZED, MISSING_CUSTOMER, INVALID_PAYMENT_REQUEST, SAVE_CARDS_UNAVAILABLE).
   - Route: delegated (writer).
-- **T3 done.** Commit: HASH3. RED: 2 tests `pay({ type: "card" }) with Card on File > phone mode, phone missing|blank > skips the implicit enrollment, charges as a regular card, and warns once` failed. GREEN after implementation; the COF-off (no warning) and available-phone (still enrolls, no warning) cases pass. Checks: `npm test` 58 files / 703 tests passed; `npm run typecheck` clean; `npm run build` clean.
+- **T3 done.** Commit: cb6776a. RED: 2 tests `pay({ type: "card" }) with Card on File > phone mode, phone missing|blank > skips the implicit enrollment, charges as a regular card, and warns once` failed. GREEN after implementation; the COF-off (no warning) and available-phone (still enrolls, no warning) cases pass. Checks: `npm test` 58 files / 703 tests passed; `npm run typecheck` clean; `npm run build` clean.
   - Decision: the warning reuses the existing `[tonder] ` prefix and a plain `console.warn`; it says the card was not saved because the business identifies customers by phone and `session.customer.phone` is missing.
+  - Route: delegated (writer).
+- **T4 done.** Commit: see `git log` (docs commit, T4). README: `session.customer` row, Card on File section (phone rule), `canSaveCards()` reference + TOC, saved card and enrollment sections, `pay` card behaviour and warning, `SAVE_CARDS_UNAVAILABLE` in the pay/enrollCard/getCustomerCards throws tables and the credentials error table. Checks: `npm test` 703 passed; `npm run typecheck` clean; `npm run build` clean.
   - Route: delegated (writer).
 
 ## Next step
 
-T4.
+All tasks done. Raise the single PR (push and PR creation are the owner's decision).
