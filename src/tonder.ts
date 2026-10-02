@@ -564,9 +564,12 @@ export class Tonder {
    * Card payments use the mounted `'card_fields'` component for new cards, or
    * `payment_method: { type: 'saved_card', card_id }` for stored cards, which
    * rejects with `AppError(SAVE_CARDS_UNAVAILABLE)` when {@link canSaveCards}
-   * is `false`. Hosted
-   * authentication or alternative-payment flows are presented according to
-   * `config.presentation_mode`.
+   * is `false`. Hosted authentication or alternative-payment flows are
+   * presented according to `config.presentation_mode`.
+   *
+   * With Card on File active, a `'card'` payment normally saves the card first.
+   * When {@link canSaveCards} is `false` it is charged as a regular card
+   * without being saved, and `console.warn` reports why.
    */
   public async pay(input: PayInput): Promise<RawTransaction> {
     try {
@@ -813,7 +816,14 @@ export class Tonder {
     const method = input.payment_method;
 
     if (Tonder.isMethodType(method.type, 'card')) {
-      if (this.isCofActive()) {
+      if (this.isCofActive() && !this.canSaveCards()) {
+        // Charged as a regular card: enrolling would be refused by the backend
+        // and take the payment down with it. Warn instead of failing silently.
+        console.warn(
+          '[tonder] The card was not saved: this business identifies customers by phone ' +
+            'and `session.customer.phone` is missing. The payment continues as a regular card payment.',
+        );
+      } else if (this.isCofActive()) {
         const params = await this.buildCofEnrollParams(input.currency);
         const { cardId } = await this.#cofService.enrollCard(params);
         return {

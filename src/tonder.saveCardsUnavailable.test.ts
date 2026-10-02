@@ -280,3 +280,59 @@ describe('saved-card calls where saved cards are available', () => {
     });
   });
 });
+
+describe('pay({ type: "card" }) with Card on File', () => {
+  const warnPattern = /\[tonder\].*phone.*session\.customer\.phone/s;
+
+  describe.each(UNAVAILABLE)('phone mode, %s', (_name, customer) => {
+    it('skips the implicit enrollment, charges as a regular card, and warns once', async () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const { tonder, calls, tk, acq } = build({
+        business: { ...PHONE_MODE, ...COF },
+        customer,
+      });
+      await tonder.init();
+
+      const tx = await tonder.pay(cardPay());
+
+      expect(tx.status).toBe('Authorized');
+      expect(calls.filter((c) => c.endsWith('/cards/'))).toEqual([]);
+      expect(acq.createCofSubscription).not.toHaveBeenCalled();
+      expect(tk.collect).toHaveBeenCalledTimes(1);
+      expect(calls).toContain('POST /api/v1/process/');
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(warn.mock.calls[0][0]).toMatch(warnPattern);
+    });
+  });
+
+  it('without Card on File: unchanged and no warning', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { tonder, calls } = build({
+      business: PHONE_MODE,
+      customer: NO_PHONE,
+    });
+    await tonder.init();
+
+    const tx = await tonder.pay(cardPay());
+
+    expect(tx.status).toBe('Authorized');
+    expect(calls).toEqual(['POST /api/v1/process/']);
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  describe.each(AVAILABLE)('%s', (_name, business, customer) => {
+    it('still enrolls implicitly and does not warn', async () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const { tonder, calls } = build({
+        business: { ...business, ...COF },
+        customer,
+      });
+      await tonder.init();
+
+      await tonder.pay(cardPay());
+
+      expect(calls).toContain('POST /api/v1/business/7/cards/');
+      expect(warn).not.toHaveBeenCalled();
+    });
+  });
+});
