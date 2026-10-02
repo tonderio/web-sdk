@@ -60,4 +60,4 @@ AC-1 to AC-9 as published in TEC-1101.
 
 ## Next step
 
-All tasks done. Raise the single PR (push and PR creation are the owner's decision).
+All tasks done. Version bumped to 0.1.10 (release commit) and single PR to `develop` opened. Pending: stage validation of a Card on File business charged as a regular card when the phone is missing.
