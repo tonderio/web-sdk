@@ -1108,6 +1108,35 @@ export class Tonder {
     }
   }
 
+  /**
+   * Whether saved cards can be used for the configured customer.
+   *
+   * Saved cards are unavailable only when the business identifies customers by
+   * phone (`save_cards_identifier_type === 'phone'`) and
+   * `config.session.customer.phone` is missing or blank. A missing or unknown
+   * identifier type behaves as `'email'`, which never depends on the phone.
+   *
+   * When this is `false`, {@link getCustomerCards}, {@link enrollCard}, and
+   * `pay()` with `payment_method: { type: 'saved_card' }` reject with
+   * `AppError(SAVE_CARDS_UNAVAILABLE)`, and a card payment on a Card on File
+   * business is charged without being saved. {@link removeCustomerCard} is not
+   * affected.
+   *
+   * Synchronous, no network, and NEVER throws. Before `init()` the business
+   * identifier type is unknown, so it returns `false`.
+   */
+  public canSaveCards(): boolean {
+    const state = this.#core.getState();
+    if (state.lifecycle !== 'ready') {
+      return false;
+    }
+    if (state.business?.save_cards_identifier_type !== 'phone') {
+      return true;
+    }
+    const phone = this.#core.getConfig().session?.customer?.phone;
+    return typeof phone === 'string' && phone.trim() !== '';
+  }
+
   private isCofActive(): boolean {
     return Boolean(this.#core.getState().business?.cardonfile_keys?.public_key);
   }

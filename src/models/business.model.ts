@@ -104,4 +104,12 @@ export interface BusinessConfig {
   reference: string;
   is_installments_available: boolean;
   cardonfile_keys: CardOnFileKeys | null;
+  /**
+   * Which customer identifier the business uses to scope saved cards. Absent
+   * (older backends) or any unrecognised value behaves as `'email'`.
+   *
+   * NOT normalized here — the model reports what the API sent; the rule that
+   * reads it treats everything other than `'phone'` as `'email'`.
+   */
+  save_cards_identifier_type?: 'email' | 'phone';
 }
