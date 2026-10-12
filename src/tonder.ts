@@ -233,7 +233,10 @@ export class Tonder {
       acquirer ??
       new KushkiAdapter({
         loader: createKushkiLoader(),
-        http: new FetchHttpClient(this.#env.acquirer, config.api_key),
+        // The acquirer host does not allow `X-App-Origin` in its CORS policy.
+        http: new FetchHttpClient(this.#env.acquirer, config.api_key, {
+          appOrigin: false,
+        }),
         apiKey: config.api_key,
         isTestEnvironment: config.environment !== 'production',
       });
