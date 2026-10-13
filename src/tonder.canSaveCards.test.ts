@@ -5,10 +5,11 @@ import { MESSAGES_EN } from './shared/errors/messages';
 import type { HttpPort, HttpRequestOptions } from './ports/http.port';
 import { asHttpPort } from './test-support/http.mock';
 import type { TokenizerPort } from './ports/tokenizer.port';
-import type { BusinessConfig } from './models/business.model';
+import type { BusinessConfig, BusinessProfile } from './models/business.model';
 import type { TonderConfig } from './shared/types';
 
 function makeBusinessConfig(
+  profile: Partial<BusinessProfile> = {},
   overrides: Partial<BusinessConfig> = {},
 ): BusinessConfig {
   return {
@@ -25,6 +26,7 @@ function makeBusinessConfig(
       textCheckoutColor: '#111',
       textDetailsColor: '#222',
       checkout_logo: 'checkout.png',
+      ...profile,
     },
     openpay_keys: { merchant_id: 'm1', public_key: 'pk_op' },
     fintoc_keys: { public_key: 'pk_fi' },
@@ -48,11 +50,12 @@ function noopTokenizer(): TokenizerPort {
 }
 
 function build(
-  business: Partial<BusinessConfig>,
+  profile: Partial<BusinessProfile>,
   customer?: NonNullable<TonderConfig['session']>['customer'],
+  rootOverrides: Partial<BusinessConfig> = {},
 ) {
   const http: HttpPort = asHttpPort((_options: HttpRequestOptions) =>
-    Promise.resolve(makeBusinessConfig(business)),
+    Promise.resolve(makeBusinessConfig(profile, rootOverrides)),
   );
   return _createTonderWithDeps({
     config: {
@@ -103,6 +106,16 @@ describe('Tonder.canSaveCards', () => {
     await tonder.init();
 
     expect(tonder.canSaveCards()).toBe(false);
+  });
+
+  it('ignores the field at the root of the response: the backend nests it in `business`', async () => {
+    const rootOnly = {
+      save_cards_identifier_type: 'phone',
+    } as unknown as Partial<BusinessConfig>;
+    const tonder = build({}, NO_PHONE, rootOnly);
+    await tonder.init();
+
+    expect(tonder.canSaveCards()).toBe(true);
   });
 
   it('has a message naming the phone requirement', () => {

@@ -1142,7 +1142,7 @@ export class Tonder {
    * Whether saved cards can be used for the configured customer.
    *
    * Saved cards are unavailable only when the business identifies customers by
-   * phone (`save_cards_identifier_type === 'phone'`) and
+   * phone (`business.save_cards_identifier_type === 'phone'`) and
    * `config.session.customer.phone` is missing or blank. A missing or unknown
    * identifier type behaves as `'email'`, which never depends on the phone.
    *
@@ -1160,7 +1160,7 @@ export class Tonder {
     if (state.lifecycle !== 'ready') {
       return false;
     }
-    if (state.business?.save_cards_identifier_type !== 'phone') {
+    if (state.business?.business?.save_cards_identifier_type !== 'phone') {
       return true;
     }
     const phone = this.#core.getConfig().session?.customer?.phone;
