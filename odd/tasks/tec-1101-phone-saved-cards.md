@@ -10,7 +10,7 @@ With Card on File active, `pay({ type: "card" })` enrolls the card implicitly be
 
 ## Scope (authorized, ticket TEC-1101)
 
-- `BusinessConfig.save_cards_identifier_type: "email" | "phone"`, absent or unknown → `"email"`. Read from `GET /api/v1/payments/business/{apiKey}`.
+- `save_cards_identifier_type: "email" | "phone"`, absent or unknown → `"email"`. Read from `business.save_cards_identifier_type` in the response of `GET /api/v1/payments/business/{apiKey}` (nested in the `business` object, not at the root).
 - Rule: unavailable iff type is `"phone"` and `session.customer.phone` is missing or blank.
 - Public `canSaveCards(): boolean`.
 - `pay({ type: "card" })`: only when Card on File is active, skip implicit enrollment, charge as a regular card, `console.warn`. Without Card on File: unchanged, no warning.
@@ -57,7 +57,9 @@ AC-1 to AC-9 as published in TEC-1101.
   - Route: delegated (writer).
 - **T4 done.** Commit: see `git log` (docs commit, T4). README: `session.customer` row, Card on File section (phone rule), `canSaveCards()` reference + TOC, saved card and enrollment sections, `pay` card behaviour and warning, `SAVE_CARDS_UNAVAILABLE` in the pay/enrollCard/getCustomerCards throws tables and the credentials error table. Checks: `npm test` 703 passed; `npm run typecheck` clean; `npm run build` clean.
   - Route: delegated (writer).
+- **Fix (shipped in 0.1.11).** Commit: the `fix: [TEC-1101] read save_cards_identifier_type from the business object` commit on `fix/TEC-1101` (see `git log`). Bug: 0.1.10 read the field from the root of `BusinessConfig`, but the backend sends it nested in `business`, so the SDK always saw `undefined`, behaved as email mode and the phone rule never activated; the unit mocks put the field at the root, which hid it. RED: mocks moved into `business` plus a regression test that a root-level field is ignored; `npm test` 17 failed / 691 passed (5 in `src/tonder.canSaveCards.test.ts`, 12 in `src/tonder.saveCardsUnavailable.test.ts`, including the new regression test). GREEN after moving the field to `BusinessProfile` and reading `state.business?.business?.save_cards_identifier_type` (no root fallback): `npm test` 59 files / 708 tests passed; `npm run typecheck` clean; `npm run build` clean (0 findings).
+  - Route: delegated (writer).
 
 ## Next step
 
-All tasks done. Version bumped to 0.1.10 (release commit) and single PR to `develop` opened. Pending: stage validation of a Card on File business charged as a regular card when the phone is missing.
+Fix ships in 0.1.11 (not yet published to production, so no version bump); single PR to `develop`. Pending: stage validation against a business configured with `save_cards_identifier_type: "phone"`, including Card on File charged as a regular card when the phone is missing.

@@ -133,24 +133,22 @@ describe('BusinessConfig.apple_pay', () => {
   });
 });
 
-describe('BusinessConfig.save_cards_identifier_type', () => {
+describe('BusinessProfile.save_cards_identifier_type', () => {
   it('is absent on a business the backend has not configured with an identifier', () => {
-    expect(businessConfig(businessProfile()).save_cards_identifier_type).toBe(
-      undefined,
-    );
+    expect(
+      businessConfig(businessProfile()).business.save_cards_identifier_type,
+    ).toBe(undefined);
   });
 
   it('carries `phone` or `email` when the backend sends one', () => {
-    const phone: BusinessConfig = {
-      ...businessConfig(businessProfile()),
-      save_cards_identifier_type: 'phone',
-    };
-    const email: BusinessConfig = {
-      ...businessConfig(businessProfile()),
-      save_cards_identifier_type: 'email',
-    };
+    const phone = businessConfig(
+      businessProfile({ save_cards_identifier_type: 'phone' }),
+    );
+    const email = businessConfig(
+      businessProfile({ save_cards_identifier_type: 'email' }),
+    );
 
-    expect(phone.save_cards_identifier_type).toBe('phone');
-    expect(email.save_cards_identifier_type).toBe('email');
+    expect(phone.business.save_cards_identifier_type).toBe('phone');
+    expect(email.business.save_cards_identifier_type).toBe('email');
   });
 });

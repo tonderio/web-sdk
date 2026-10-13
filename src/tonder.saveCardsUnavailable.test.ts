@@ -6,7 +6,7 @@ import type { HttpPort, HttpRequestOptions } from './ports/http.port';
 import { asHttpPort } from './test-support/http.mock';
 import type { AcquirerPort } from './ports/acquirer.port';
 import type { TokenizerPort } from './ports/tokenizer.port';
-import type { BusinessConfig } from './models/business.model';
+import type { BusinessConfig, BusinessProfile } from './models/business.model';
 import type { PayInput, TonderConfig } from './shared/types';
 
 type Customer = NonNullable<TonderConfig['session']>['customer'];
@@ -17,6 +17,7 @@ const BLANK_PHONE: Customer = { email: 'ada@example.com', phone: '   ' };
 
 function makeBusinessConfig(
   overrides: Partial<BusinessConfig> = {},
+  profile: Partial<BusinessProfile> = {},
 ): BusinessConfig {
   return {
     business: {
@@ -32,6 +33,7 @@ function makeBusinessConfig(
       textCheckoutColor: '#111',
       textDetailsColor: '#222',
       checkout_logo: 'checkout.png',
+      ...profile,
     },
     openpay_keys: { merchant_id: 'm1', public_key: 'pk_op' },
     fintoc_keys: { public_key: 'pk_fi' },
@@ -76,12 +78,15 @@ function acquirer(): AcquirerPort & {
 /** Every request except the init business GET, as `METHOD path`. */
 function build(options: {
   business?: Partial<BusinessConfig>;
+  profile?: Partial<BusinessProfile>;
   customer?: Customer;
 }) {
   const calls: string[] = [];
   const http: HttpPort = asHttpPort((request: HttpRequestOptions) => {
     if (request.path.startsWith('/api/v1/payments/business/')) {
-      return Promise.resolve(makeBusinessConfig(options.business));
+      return Promise.resolve(
+        makeBusinessConfig(options.business, options.profile),
+      );
     }
     calls.push(`${request.method} ${request.path}`);
     if (request.path === '/api/v1/customer/') {
@@ -126,7 +131,7 @@ function build(options: {
 const COF = { cardonfile_keys: { public_key: 'cof_pub' } };
 const PHONE_MODE = { save_cards_identifier_type: 'phone' as const };
 
-const AVAILABLE: [string, Partial<BusinessConfig>, Customer][] = [
+const AVAILABLE: [string, Partial<BusinessProfile>, Customer][] = [
   ['email mode, no phone', { save_cards_identifier_type: 'email' }, NO_PHONE],
   ['field absent, no phone', {}, NO_PHONE],
   ['phone mode, phone present', PHONE_MODE, WITH_PHONE],
@@ -161,7 +166,7 @@ afterEach(() => {
 describe('saved-card calls in phone mode without a phone', () => {
   describe.each(UNAVAILABLE)('%s', (_name, customer) => {
     it('getCustomerCards rejects with SAVE_CARDS_UNAVAILABLE before any request', async () => {
-      const { tonder, calls } = build({ business: PHONE_MODE, customer });
+      const { tonder, calls } = build({ profile: PHONE_MODE, customer });
       await tonder.init();
 
       const err = await tonder.getCustomerCards().catch((e) => e);
@@ -178,7 +183,8 @@ describe('saved-card calls in phone mode without a phone', () => {
       'enrollCard rejects with SAVE_CARDS_UNAVAILABLE before any request (%s)',
       async (_cof, cof) => {
         const { tonder, calls, tk } = build({
-          business: { ...PHONE_MODE, ...cof },
+          profile: PHONE_MODE,
+          business: cof,
           customer,
         });
         await tonder.init();
@@ -198,7 +204,8 @@ describe('saved-card calls in phone mode without a phone', () => {
       'pay(saved_card) rejects with SAVE_CARDS_UNAVAILABLE before any request (%s)',
       async (_cof, cof) => {
         const { tonder, calls } = build({
-          business: { ...PHONE_MODE, ...cof },
+          profile: PHONE_MODE,
+          business: cof,
           customer,
         });
         await tonder.init();
@@ -211,7 +218,7 @@ describe('saved-card calls in phone mode without a phone', () => {
     );
 
     it('removeCustomerCard still calls the backend', async () => {
-      const { tonder, calls } = build({ business: PHONE_MODE, customer });
+      const { tonder, calls } = build({ profile: PHONE_MODE, customer });
       await tonder.init();
 
       await expect(tonder.removeCustomerCard('c1')).resolves.toBeUndefined();
@@ -221,7 +228,7 @@ describe('saved-card calls in phone mode without a phone', () => {
   });
 
   it('keeps NOT_INITIALIZED ahead of SAVE_CARDS_UNAVAILABLE', async () => {
-    const { tonder } = build({ business: PHONE_MODE, customer: NO_PHONE });
+    const { tonder } = build({ profile: PHONE_MODE, customer: NO_PHONE });
 
     await expect(tonder.getCustomerCards()).rejects.toMatchObject({
       code: ErrorKeyEnum.NOT_INITIALIZED,
@@ -235,7 +242,7 @@ describe('saved-card calls in phone mode without a phone', () => {
   });
 
   it('keeps MISSING_CUSTOMER ahead of SAVE_CARDS_UNAVAILABLE', async () => {
-    const { tonder } = build({ business: PHONE_MODE });
+    const { tonder } = build({ profile: PHONE_MODE });
     await tonder.init();
 
     await expect(tonder.getCustomerCards()).rejects.toMatchObject({
@@ -250,7 +257,7 @@ describe('saved-card calls in phone mode without a phone', () => {
   });
 
   it('keeps INVALID_PAYMENT_REQUEST ahead of SAVE_CARDS_UNAVAILABLE for a bad amount', async () => {
-    const { tonder } = build({ business: PHONE_MODE, customer: NO_PHONE });
+    const { tonder } = build({ profile: PHONE_MODE, customer: NO_PHONE });
     await tonder.init();
 
     await expect(
@@ -262,7 +269,7 @@ describe('saved-card calls in phone mode without a phone', () => {
 describe('saved-card calls where saved cards are available', () => {
   describe.each(AVAILABLE)('%s', (_name, business, customer) => {
     it('getCustomerCards lists cards', async () => {
-      const { tonder, calls } = build({ business, customer });
+      const { tonder, calls } = build({ profile: business, customer });
       await tonder.init();
 
       await expect(tonder.getCustomerCards()).resolves.toEqual([]);
@@ -270,7 +277,7 @@ describe('saved-card calls where saved cards are available', () => {
     });
 
     it('enrollCard saves the card', async () => {
-      const { tonder, calls } = build({ business, customer });
+      const { tonder, calls } = build({ profile: business, customer });
       await tonder.init();
 
       await expect(tonder.enrollCard()).resolves.toMatchObject({
@@ -288,7 +295,8 @@ describe('pay({ type: "card" }) with Card on File', () => {
     it('skips the implicit enrollment, charges as a regular card, and warns once', async () => {
       const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
       const { tonder, calls, tk, acq } = build({
-        business: { ...PHONE_MODE, ...COF },
+        profile: PHONE_MODE,
+        business: COF,
         customer,
       });
       await tonder.init();
@@ -308,7 +316,7 @@ describe('pay({ type: "card" }) with Card on File', () => {
   it('without Card on File: unchanged and no warning', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const { tonder, calls } = build({
-      business: PHONE_MODE,
+      profile: PHONE_MODE,
       customer: NO_PHONE,
     });
     await tonder.init();
@@ -324,7 +332,8 @@ describe('pay({ type: "card" }) with Card on File', () => {
     it('still enrolls implicitly and does not warn', async () => {
       const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
       const { tonder, calls } = build({
-        business: { ...business, ...COF },
+        profile: business,
+        business: COF,
         customer,
       });
       await tonder.init();
