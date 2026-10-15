@@ -25,6 +25,18 @@ const PAYMENT_METHOD_CATALOG: Record<
     label: 'SPEI',
     logoFile: 'spei.png',
   },
+  // Argentina pay-in rails: a one-time QR order (ewallet) and a bank transfer to
+  // a CVU/alias (banking). Without these entries both render as an unnamed option
+  // on the merchant's UI, because the backend returns the bare codes `qr` /
+  // `transfer`.
+  qr: {
+    label: 'QR',
+    logoFile: 'qr.png',
+  },
+  transfer: {
+    label: 'Transferencia',
+    logoFile: 'transfer.png',
+  },
   oxxopay: {
     label: 'Oxxo Pay',
     logoFile: 'oxxopay.png',
