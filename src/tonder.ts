@@ -233,7 +233,10 @@ export class Tonder {
       acquirer ??
       new KushkiAdapter({
         loader: createKushkiLoader(),
-        http: new FetchHttpClient(this.#env.acquirer, config.api_key),
+        // The acquirer host does not allow `X-App-Origin` in its CORS policy.
+        http: new FetchHttpClient(this.#env.acquirer, config.api_key, {
+          appOrigin: false,
+        }),
         apiKey: config.api_key,
         isTestEnvironment: config.environment !== 'production',
       });
@@ -562,9 +565,14 @@ export class Tonder {
    * {@link AppError} with a stable {@link ErrorKeyEnum} code.
    *
    * Card payments use the mounted `'card_fields'` component for new cards, or
-   * `payment_method: { type: 'saved_card', card_id }` for stored cards. Hosted
-   * authentication or alternative-payment flows are presented according to
-   * `config.presentation_mode`.
+   * `payment_method: { type: 'saved_card', card_id }` for stored cards, which
+   * rejects with `AppError(SAVE_CARDS_UNAVAILABLE)` when {@link canSaveCards}
+   * is `false`. Hosted authentication or alternative-payment flows are
+   * presented according to `config.presentation_mode`.
+   *
+   * With Card on File active, a `'card'` payment normally saves the card first.
+   * When {@link canSaveCards} is `false` it is charged as a regular card
+   * without being saved, and `console.warn` reports why.
    */
   public async pay(input: PayInput): Promise<RawTransaction> {
     try {
@@ -595,7 +603,8 @@ export class Tonder {
 
     // A customer is required for EVERY payment method, so this runs before the
     // input shape is validated or the network is touched. Precedence:
-    // NOT_INITIALIZED → MISSING_CUSTOMER → INVALID_PAYMENT_REQUEST.
+    // NOT_INITIALIZED → MISSING_CUSTOMER → INVALID_PAYMENT_REQUEST →
+    // SAVE_CARDS_UNAVAILABLE (saved_card only, see below).
     if (!this.#core.getConfig().session?.customer) {
       throw new AppError({ errorCode: ErrorKeyEnum.MISSING_CUSTOMER });
     }
@@ -606,6 +615,12 @@ export class Tonder {
     input = snapshotPaymentInput(input);
 
     Tonder.assertValidPayInput(input);
+
+    // After the shape check: only a saved-card payment depends on the customer
+    // phone, and that is known only once the input type has been validated.
+    if (Tonder.isMethodType(input.payment_method.type, 'saved_card')) {
+      this.assertSaveCardsAvailable();
+    }
 
     // Captured BEFORE the method block is resolved: this is the single
     // discriminator that drives presentation. APM/SPEI settle async via webhook
@@ -804,7 +819,14 @@ export class Tonder {
     const method = input.payment_method;
 
     if (Tonder.isMethodType(method.type, 'card')) {
-      if (this.isCofActive()) {
+      if (this.isCofActive() && !this.canSaveCards()) {
+        // Charged as a regular card: enrolling would be refused by the backend
+        // and take the payment down with it. Warn instead of failing silently.
+        console.warn(
+          '[tonder] The card was not saved: this business identifies customers by phone ' +
+            'and `session.customer.phone` is missing. The payment continues as a regular card payment.',
+        );
+      } else if (this.isCofActive()) {
         const params = await this.buildCofEnrollParams(input.currency);
         const { cardId } = await this.#cofService.enrollCard(params);
         return {
@@ -1040,8 +1062,12 @@ export class Tonder {
    * and a mounted new-card `'card_fields'` component. Returns the saved
    * `card_id`, plus `subscription_id` when card-on-file enrollment is enabled
    * for the business.
+   *
+   * Rejects with `AppError(SAVE_CARDS_UNAVAILABLE)` before any request when
+   * {@link canSaveCards} is `false`.
    */
   public async enrollCard(): Promise<EnrollResult> {
+    this.assertSaveCardsAvailable();
     const params = await this.buildCofEnrollParams();
 
     if (this.isCofActive()) {
@@ -1062,8 +1088,12 @@ export class Tonder {
    * Requires `init()`, `config.session.customer`, and
    * `config.session.secure_token`. Returned cards contain masked, display-safe
    * values only.
+   *
+   * Rejects with `AppError(SAVE_CARDS_UNAVAILABLE)` before any request when
+   * {@link canSaveCards} is `false`.
    */
   public async getCustomerCards(): Promise<Card[]> {
+    this.assertSaveCardsAvailable();
     const { businessPk, secureToken, userToken } = await this.resolveCardAuth();
     try {
       const cards = await this.#cardService.getCards(
@@ -1105,6 +1135,50 @@ export class Tonder {
         errorCode: ErrorKeyEnum.REMOVE_CARD_ERROR,
         originalError: error,
       });
+    }
+  }
+
+  /**
+   * Whether saved cards can be used for the configured customer.
+   *
+   * Saved cards are unavailable only when the business identifies customers by
+   * phone (`business.save_cards_identifier_type === 'phone'`) and
+   * `config.session.customer.phone` is missing or blank. A missing or unknown
+   * identifier type behaves as `'email'`, which never depends on the phone.
+   *
+   * When this is `false`, {@link getCustomerCards}, {@link enrollCard}, and
+   * `pay()` with `payment_method: { type: 'saved_card' }` reject with
+   * `AppError(SAVE_CARDS_UNAVAILABLE)`, and a card payment on a Card on File
+   * business is charged without being saved. {@link removeCustomerCard} is not
+   * affected.
+   *
+   * Synchronous, no network, and NEVER throws. Before `init()` the business
+   * identifier type is unknown, so it returns `false`.
+   */
+  public canSaveCards(): boolean {
+    const state = this.#core.getState();
+    if (state.lifecycle !== 'ready') {
+      return false;
+    }
+    if (state.business?.business?.save_cards_identifier_type !== 'phone') {
+      return true;
+    }
+    const phone = this.#core.getConfig().session?.customer?.phone;
+    return typeof phone === 'string' && phone.trim() !== '';
+  }
+
+  /**
+   * Guard for the saved-card operations. Runs after the init and customer
+   * checks it shares with `resolveCardAuth`, but before that method registers
+   * the customer, so a rejection costs no request.
+   */
+  private assertSaveCardsAvailable(): void {
+    this.assertReady();
+    if (!this.#core.getConfig().session?.customer) {
+      throw new AppError({ errorCode: ErrorKeyEnum.MISSING_CUSTOMER });
+    }
+    if (!this.canSaveCards()) {
+      throw new AppError({ errorCode: ErrorKeyEnum.SAVE_CARDS_UNAVAILABLE });
     }
   }
 

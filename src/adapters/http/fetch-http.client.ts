@@ -2,6 +2,16 @@ import type { HttpPort, HttpRequestOptions } from '../../ports/http.port';
 import { AppError } from '../../shared/errors/AppError';
 import { ErrorKeyEnum } from '../../shared/errors/ErrorKeyEnum';
 
+/** Construction options for {@link FetchHttpClient}. */
+export interface FetchHttpClientOptions {
+  /**
+   * Send `X-App-Origin: sdk/web` on every request. Defaults to `true`. Disable
+   * it for hosts whose CORS policy does not allow the header: a custom header
+   * outside `Access-Control-Allow-Headers` fails the preflight.
+   */
+  appOrigin?: boolean;
+}
+
 /**
  * `fetch`-based implementation of {@link HttpPort}. The ONLY place in the SDK
  * that touches the global `fetch`. Generic transport — it carries no domain
@@ -14,10 +24,16 @@ import { ErrorKeyEnum } from '../../shared/errors/ErrorKeyEnum';
 export class FetchHttpClient implements HttpPort {
   private readonly baseUrl: string;
   private readonly apiKey: string;
+  private readonly appOrigin: boolean;
 
-  constructor(baseUrl: string, apiKey: string) {
+  constructor(
+    baseUrl: string,
+    apiKey: string,
+    options: FetchHttpClientOptions = {},
+  ) {
     this.baseUrl = baseUrl;
     this.apiKey = apiKey;
+    this.appOrigin = options.appOrigin ?? true;
   }
 
   public async request<T>(options: HttpRequestOptions): Promise<T> {
@@ -25,7 +41,7 @@ export class FetchHttpClient implements HttpPort {
     const headers: Record<string, string> = {
       Authorization: `Token ${this.apiKey}`,
       'Content-Type': 'application/json',
-      'X-App-Origin': 'sdk/web',
+      ...(this.appOrigin ? { 'X-App-Origin': 'sdk/web' } : {}),
       ...(options.headers ?? {}),
     };
 

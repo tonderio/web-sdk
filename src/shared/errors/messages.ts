@@ -45,6 +45,8 @@ export const MESSAGES_EN: Record<string, string> = {
     'No secure token. Provide `session.secure_token` in createTonder() config.',
   [ErrorKeyEnum.MISSING_CUSTOMER]:
     'No customer set. Provide `session.customer` in createTonder() config.',
+  [ErrorKeyEnum.SAVE_CARDS_UNAVAILABLE]:
+    'Saved cards require a customer phone: this business identifies customers by phone. Provide `session.customer.phone` in createTonder() config.',
   [ErrorKeyEnum.INVALID_EMAIL]: 'A valid customer email is required.',
   [ErrorKeyEnum.NOT_INITIALIZED]:
     'The SDK is not initialized. Call init() before this operation.',

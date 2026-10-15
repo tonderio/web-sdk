@@ -94,6 +94,24 @@ describe('FetchHttpClient', () => {
     expect(headers['X-App-Origin']).toBe('sdk/web');
   });
 
+  it('omits X-App-Origin when the client is created with appOrigin disabled', async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ ok: true }));
+    const client = new FetchHttpClient(BASE, API_KEY, { appOrigin: false });
+
+    await client.request({
+      method: 'POST',
+      path: '/acq-kushki/subscription/token',
+      headers: { Authorization: `Token ${API_KEY}` },
+      body: { a: 1 },
+    });
+
+    const [, init] = fetchMock.mock.calls[0];
+    const headers = init.headers as Record<string, string>;
+    expect(headers).not.toHaveProperty('X-App-Origin');
+    expect(headers.Authorization).toBe(`Token ${API_KEY}`);
+    expect(headers['Content-Type']).toBe('application/json');
+  });
+
   it('X-App-Origin is present even if caller passes an explicit headers object that omits it', async () => {
     fetchMock.mockResolvedValue(jsonResponse({ ok: true }));
     const client = new FetchHttpClient(BASE, API_KEY);
