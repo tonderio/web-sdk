@@ -71,18 +71,16 @@ describe('getPaymentMethodCatalogDetails', () => {
     );
   });
 
-  it('labels the Argentina rails and serves the store logo until artwork ships', () => {
-    // `qr.png` / `transfer.png` are not on the asset host yet, so these omit
-    // `logoFile` and fall back to the store logo rather than a broken image.
+  it('labels the Argentina rails and serves their own artwork', () => {
     expect(getPaymentMethodCatalogDetails('qr', PRODUCTION_ASSETS)).toEqual({
       label: 'QR',
-      logo: STORE_LOGO,
+      logo: `${PRODUCTION_ASSETS}/payment_methods/qr.png`,
     });
     expect(
       getPaymentMethodCatalogDetails('transfer', PRODUCTION_ASSETS),
     ).toEqual({
       label: 'Transferencia',
-      logo: STORE_LOGO,
+      logo: `${PRODUCTION_ASSETS}/payment_methods/transfer.png`,
     });
   });
 
