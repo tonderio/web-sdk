@@ -8,39 +8,10 @@
  * result object.
  */
 
-/** Presentation payload included when the shopper must complete an extra action. */
+/** Redirect information included when the shopper must complete an extra action. */
 export interface BackendNextAction {
   redirect_to_url?: {
     url: string;
-    verify_transaction_status_url?: string;
-  };
-  /**
-   * Argentina QR rail: render the QR from `qr_string` (the base64 endpoint
-   * returns base64 of that string, not a PNG, so `image_url` may be empty). Poll
-   * `verify_transaction_status_url` until the order settles.
-   */
-  display_qr_code?: {
-    qr_string: string;
-    image_url?: string;
-    payment_order_id?: string;
-    amount?: number;
-    currency?: string;
-    expires_at?: string;
-    verify_transaction_status_url?: string;
-  };
-  /**
-   * Argentina transfer rail: show the destination CVU/alias so the shopper can
-   * push the funds. Poll `verify_transaction_status_url` until the credit lands.
-   */
-  display_bank_transfer?: {
-    account_type: string;
-    account_number: string;
-    alias?: string;
-    holder_name?: string;
-    holder_tax_id?: string;
-    amount?: number;
-    currency?: string;
-    reference?: string;
     verify_transaction_status_url?: string;
   };
 }
