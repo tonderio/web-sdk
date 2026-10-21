@@ -764,16 +764,20 @@ Use `getPaymentMethods()` when you want to render the methods enabled for your b
 
 #### Method codes
 
-| Code                | Method             |
-| ------------------- | ------------------ |
-| `card`              | Credit/debit card  |
-| `saved_card`        | A stored card      |
-| `spei`              | SPEI transfer      |
-| `oxxopay`           | OXXO Pay           |
-| `mercadopago`       | Mercado Pago       |
-| `safetypaycash`     | SafetyPay cash     |
-| `safetypaytransfer` | SafetyPay transfer |
-| `neosurf`           | Neosurf            |
+| Code                | Method                   |
+| ------------------- | ------------------------ |
+| `card`              | Credit/debit card        |
+| `saved_card`        | A stored card            |
+| `spei`              | SPEI transfer            |
+| `oxxopay`           | OXXO Pay                 |
+| `mercadopago`       | Mercado Pago             |
+| `safetypaycash`     | SafetyPay cash           |
+| `safetypaytransfer` | SafetyPay transfer       |
+| `neosurf`           | Neosurf                  |
+| `qr`                | Argentina QR             |
+| `transfer`          | Argentina transfer (CVU) |
+
+**Argentina methods (`qr`, `transfer`) are ARS-only.** Pass `currency: 'ARS'` to `pay()` for these rails — the SDK default is `MXN`, so omitting it would charge the wrong currency.
 
 **The code reaches Tonder exactly as you write it.** The SDK does not re-case it, so `spei` and `SPEI` both work and each is stored and echoed back in your webhook's `payment_method_type` as you sent it. Pick one spelling and keep it, or your own reports will show the same method under two names.
 

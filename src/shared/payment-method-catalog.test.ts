@@ -42,6 +42,8 @@ describe('getPaymentMethodCatalogDetails', () => {
     ['7ELEVEN', '7 Eleven'],
     ['CAJATRUJILLO', 'Caja Trujillo'],
     ['SFDEASIS', 'Pago en Farmacias San Francisco de Asís'],
+    ['qr', 'QR'],
+    ['transfer', 'Transferencia'],
   ])(
     'names %s, which used to render as an unlabelled option',
     (code, label) => {
@@ -67,6 +69,19 @@ describe('getPaymentMethodCatalogDetails', () => {
         logo: STORE_LOGO,
       },
     );
+  });
+
+  it('labels the Argentina rails and serves their own artwork', () => {
+    expect(getPaymentMethodCatalogDetails('qr', PRODUCTION_ASSETS)).toEqual({
+      label: 'QR',
+      logo: `${PRODUCTION_ASSETS}/payment_methods/qr.png`,
+    });
+    expect(
+      getPaymentMethodCatalogDetails('transfer', PRODUCTION_ASSETS),
+    ).toEqual({
+      label: 'Transferencia',
+      logo: `${PRODUCTION_ASSETS}/payment_methods/transfer.png`,
+    });
   });
 
   it('serves an empty label and the store logo for a method it does not know', () => {
