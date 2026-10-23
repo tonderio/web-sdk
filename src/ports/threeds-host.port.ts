@@ -13,6 +13,17 @@
 export interface ThreeDsHostOptions {
   /** Whether the shopper may dismiss the modal. */
   closable: boolean;
+  /**
+   * Whether the hosted page is allowed to write to the system clipboard.
+   *
+   * Cross-origin iframes get no `clipboard-write` Permissions-Policy grant by
+   * default, so the APM/SPEI hosted page's "Copy" buttons (CVU, alias, CLABE)
+   * fail with a policy violation until the embedder delegates it. Scoped per
+   * call rather than always-on: card 3DS embeds a third-party BANK ACS page
+   * that has no need for the clipboard, and least privilege keeps us from
+   * handing that page a capability it never uses.
+   */
+  allowClipboard?: boolean;
   /** Invoked once the modal host node is mounted. */
   onOpen?(): void;
   /** Invoked when the shopper closes a closable modal. */

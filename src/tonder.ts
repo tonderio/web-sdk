@@ -791,6 +791,9 @@ export class Tonder {
       // would take the CLABE/voucher off screen before the shopper reads it.
       this.#host.open(redirectUrl, {
         closable: true,
+        // The hosted APM/SPEI page shows CVU/alias/CLABE with "Copy" buttons;
+        // delegate clipboard-write so they work inside the cross-origin iframe.
+        allowClipboard: true,
         onOpen: this.#presentationOnOpen,
         onUserClose: this.#presentationOnClose,
       });
