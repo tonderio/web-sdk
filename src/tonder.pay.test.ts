@@ -1584,7 +1584,7 @@ describe('Tonder.pay — APM/SPEI pending result (never polled)', () => {
 
     expect(host.open).toHaveBeenCalledWith(
       'https://apm.example/go',
-      expect.objectContaining({ closable: true }),
+      expect.objectContaining({ closable: true, allowClipboard: true }),
     );
     expect(pollSpy).not.toHaveBeenCalled();
     // APMs settle async — the hosted page stays visible until the shopper

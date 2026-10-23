@@ -95,6 +95,24 @@ describe('Browser3dsHost.open / close — SDK-owned modal', () => {
     expect(iframe.getAttribute('src')).toBe(URL_3DS);
   });
 
+  it('delegates clipboard-write to the iframe when allowClipboard is set', () => {
+    const host = new Browser3dsHost();
+
+    host.open(URL_3DS, { closable: true, allowClipboard: true });
+
+    const iframe = shadow().querySelector('iframe') as HTMLIFrameElement;
+    expect(iframe.getAttribute('allow')).toBe('clipboard-write');
+  });
+
+  it('does not delegate the clipboard by default (e.g. the 3DS ACS page)', () => {
+    const host = new Browser3dsHost();
+
+    host.open(URL_3DS, { closable: false });
+
+    const iframe = shadow().querySelector('iframe') as HTMLIFrameElement;
+    expect(iframe.getAttribute('allow')).toBeNull();
+  });
+
   it('never throws for a "missing container" (there is no container anymore)', () => {
     const host = new Browser3dsHost();
     expect(() => host.open(URL_3DS, { closable: false })).not.toThrow();

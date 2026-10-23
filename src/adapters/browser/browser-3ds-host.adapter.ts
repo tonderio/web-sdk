@@ -68,6 +68,13 @@ export class Browser3dsHost implements ThreeDsHostPort {
     }
 
     const iframe = document.createElement('iframe');
+    // Delegate clipboard-write to the hosted page BEFORE `src`, so the grant is
+    // in place when the frame loads. Without it the APM/SPEI page's "Copy"
+    // buttons (CVU, alias, CLABE) hit a Permissions-Policy violation, since a
+    // cross-origin iframe gets no clipboard-write grant by default.
+    if (options.allowClipboard) {
+      iframe.setAttribute('allow', 'clipboard-write');
+    }
     iframe.setAttribute('src', url);
     iframe.setAttribute('title', 'Payment authentication');
     iframe.className = 'frame';
