@@ -200,6 +200,46 @@ describe('FetchHttpClient', () => {
     expect(err.status_code).toBe(502);
   });
 
+  it('carries only the short machine code of a structured error body', async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse(
+        {
+          error: {
+            code: 'operations_disabled',
+            message: 'Traceback: internal-ledger-service',
+            type: 'unavailable',
+          },
+          request_id: 'req-1',
+        },
+        503,
+      ),
+    );
+    const client = new FetchHttpClient(BASE, API_KEY);
+
+    const err = await rejectionOf(() =>
+      client.request({ method: 'POST', path: '/x', body: {} }),
+    );
+
+    expect(err.status_code).toBe(503);
+    expect(err.originalError).toEqual({ error_code: 'operations_disabled' });
+    expect(JSON.stringify(err.originalError)).not.toMatch(/internal-ledger/);
+  });
+
+  it.each([
+    ['a free-text code', { error: { code: 'DROP TABLE; --' } }],
+    ['a non-string code', { error: { code: 42 } }],
+    ['a plain-string error', { error: 'Invalid request data' }],
+  ])('carries no code for %s', async (_label, body) => {
+    fetchMock.mockResolvedValue(jsonResponse(body, 400));
+    const client = new FetchHttpClient(BASE, API_KEY);
+
+    const err = await rejectionOf(() =>
+      client.request({ method: 'GET', path: '/x' }),
+    );
+
+    expect(err.originalError).toBeUndefined();
+  });
+
   it('maps a network rejection to AppError(REQUEST_FAILED)', async () => {
     fetchMock.mockRejectedValue(new TypeError('Failed to fetch'));
     const client = new FetchHttpClient(BASE, API_KEY);

@@ -22,16 +22,22 @@ describe('createTonder HTTP client wiring', () => {
   });
 
   it.each(['production', 'stage', 'sandbox'] as const)(
-    'disables X-App-Origin only for the acquirer host (%s)',
+    'disables X-App-Origin only for the card acquirer client, not the transactions API client (%s)',
     (environment) => {
       const urls = resolveEnv(environment);
 
       createTonder({ api_key: 'pk_test_123', environment });
 
-      const acquirer = constructed.filter((c) => c.baseUrl === urls.acquirer);
+      // The transactions API shares the acquirer's host but allows the header.
+      const onAcquirerHost = constructed.filter(
+        (c) => c.baseUrl === urls.acquirer,
+      );
       const api = constructed.filter((c) => c.baseUrl === urls.api);
-      expect(acquirer).toHaveLength(1);
-      expect(acquirer[0].options).toEqual({ appOrigin: false });
+      expect(onAcquirerHost.map((c) => c.options)).toEqual([
+        undefined,
+        { appOrigin: false },
+      ]);
+      expect(urls.core).toBe(urls.acquirer);
       expect(api).toHaveLength(1);
       expect(api[0].options).toBeUndefined();
     },

@@ -18,11 +18,15 @@ export class BusinessService {
     this.http = http;
   }
 
-  public async fetchBusinessConfig(apiKey: string): Promise<BusinessConfig> {
+  /**
+   * The business is the credential's own: the key travels in the auth header,
+   * never in the path.
+   */
+  public async fetchBusinessConfig(): Promise<BusinessConfig> {
     try {
       return await this.http.request<BusinessConfig>({
         method: 'GET',
-        path: `/api/v1/payments/business/${apiKey}`,
+        path: '/transactions/v1/business/config',
       });
     } catch (error) {
       throw new AppError({

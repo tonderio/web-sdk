@@ -5,11 +5,14 @@ import { createSkyflowLoader } from './adapters/skyflow/skyflow-loader';
 import { SkyflowAdapter } from './adapters/skyflow/skyflow.adapter';
 import { ServiceManager } from './core/ServiceManager';
 import { BusinessService } from './core/services/business.service';
+import { SessionEnginePin } from './adapters/browser/session-engine-pin.adapter';
 import { CardService } from './core/services/card.service';
 import { CofService, type EnrollParams } from './core/services/cof.service';
 import { CustomerService } from './core/services/customer.service';
 import {
+  CORE_API_ROUTES,
   DirectApiService,
+  isOperationsDisabled,
   type ProcessPaymentBody,
 } from './core/services/direct-api.service';
 import { VaultService } from './core/services/vault.service';
@@ -31,7 +34,10 @@ import {
 } from './models/transaction.model';
 import { toPublicPaymentMethods } from './models/payment-method.model';
 import { DEFAULT_BUSINESS_COUNTRY_CODE } from './models/business.model';
-import type { RawTransaction } from './models/transaction.model';
+import type {
+  BackendTransactionResponse,
+  RawTransaction,
+} from './models/transaction.model';
 import { Browser3dsHost } from './adapters/browser/browser-3ds-host.adapter';
 import { BrowserApplePay } from './adapters/browser/apple-pay.adapter';
 import { ApplePayService } from './core/services/apple-pay.service';
@@ -51,6 +57,8 @@ import type { CheckoutMessengerPort } from './ports/checkout-messenger.port';
 import { pollUntilFinal, type PollOptions } from './shared/utils/poll';
 import type { AcquirerPort } from './ports/acquirer.port';
 import type { HttpPort } from './ports/http.port';
+import type { EnginePinPort, PaymentEngine } from './ports/engine-pin.port';
+import { newRequestId } from './shared/utils/request-id';
 import type { TokenizerPort } from './ports/tokenizer.port';
 import { resolveEnv, type TonderBaseUrls } from './shared/config/env';
 import { snapshotPaymentInput } from './shared/payment-input-snapshot';
@@ -157,6 +165,8 @@ export class Tonder {
   readonly #businessService: BusinessService;
   readonly #vaultService: VaultService;
   readonly #directApiService: DirectApiService;
+  readonly #coreApiService: DirectApiService;
+  readonly #enginePin: EnginePinPort = new SessionEnginePin();
   readonly #customerService: CustomerService;
   readonly #cardService: CardService;
   readonly #tokenizer: TokenizerPort;
@@ -196,9 +206,14 @@ export class Tonder {
     this.#services = new ServiceManager();
     this.#env = resolveEnv(config.environment);
     this.#http = http ?? new FetchHttpClient(this.#env.api, config.api_key);
-    this.#businessService = new BusinessService(this.#http);
+    // One injected transport serves both APIs (the paths tell them apart), so
+    // a test seam needs a single fake.
+    const coreHttp =
+      http ?? new FetchHttpClient(this.#env.core, config.api_key);
+    this.#businessService = new BusinessService(coreHttp);
     this.#vaultService = new VaultService(this.#http);
     this.#directApiService = new DirectApiService(this.#http);
+    this.#coreApiService = new DirectApiService(coreHttp, CORE_API_ROUTES);
     this.#customerService = new CustomerService(this.#http);
     this.#cardService = new CardService(this.#http);
     this.#applePayService = new ApplePayService(this.#http);
@@ -527,7 +542,9 @@ export class Tonder {
    * return without repeating setup. Initialization failures throw
    * `AppError(INIT_ERROR)`.
    *
-   * One request is issued: the business config. It is fatal — every
+   * One request is issued: the business config, read from the transactions
+   * API, which also says whether this business's card payments run there
+   * (`core_payments_enabled`). It is fatal — every
    * ready-gated method dereferences it — so a failure moves the instance to
    * `error` rather than reaching `ready` with nothing configured.
    */
@@ -537,11 +554,7 @@ export class Tonder {
     }
     try {
       this.#core.setState({ lifecycle: 'initializing' });
-      const config = this.#core.getConfig();
-
-      const business = await this.#businessService.fetchBusinessConfig(
-        config.api_key,
-      );
+      const business = await this.#businessService.fetchBusinessConfig();
 
       this.#core.setState({ lifecycle: 'ready', business });
     } catch (error) {
@@ -639,11 +652,13 @@ export class Tonder {
     let raw;
 
     try {
-      const requestId = scopeRequestId(
-        input.idempotency_key,
-        this.#core.getState().business?.business.pk,
-      );
-      raw = await this.#directApiService.processPayment(body, requestId);
+      const engine = this.engineFor(inputType);
+      const requestId =
+        scopeRequestId(
+          input.idempotency_key,
+          this.#core.getState().business?.business.pk,
+        ) ?? (engine === 'core' ? newRequestId() : undefined);
+      raw = await this.processOnEngine(engine, body, requestId);
     } catch (error) {
       await this.rollbackAutoEnrolledCard(resolved);
       // DirectApiService already wraps transport failures as
@@ -657,7 +672,10 @@ export class Tonder {
 
     const tx = toRawTransaction(raw);
 
-    if (inputType !== 'card' && inputType !== 'saved_card') {
+    if (
+      !Tonder.isMethodType(inputType, 'card') &&
+      !Tonder.isMethodType(inputType, 'saved_card')
+    ) {
       return await this.handleApmResult(tx);
     }
 
@@ -670,6 +688,72 @@ export class Tonder {
 
     await this.resetCardFieldsAfterSuccessfulPayment(inputType, input, finalTx);
     return finalTx;
+  }
+
+  /**
+   * The engine for a payment that is about to start. Only card payments (new
+   * card or saved card) go to the transactions API, and only when the business
+   * is enabled for it; everything else stays on the Direct API.
+   */
+  private engineFor(inputType: string): PaymentEngine {
+    const isCard =
+      Tonder.isMethodType(inputType, 'card') ||
+      Tonder.isMethodType(inputType, 'saved_card');
+    return isCard && this.#core.getState().business?.core_payments_enabled
+      ? 'core'
+      : 'legacy';
+  }
+
+  /**
+   * Create the payment on `engine` and pin the engine that created it to the
+   * transaction id.
+   *
+   * A transactions API answer of `503 operations_disabled` means nothing was
+   * created, so the same body and request id are sent once to the Direct API.
+   * Any other failure stays as it is.
+   */
+  private async processOnEngine(
+    engine: PaymentEngine,
+    body: ProcessPaymentBody,
+    requestId: string | undefined,
+  ): Promise<BackendTransactionResponse> {
+    if (engine === 'core') {
+      try {
+        const raw = await this.#coreApiService.processPayment(body, requestId);
+        this.#enginePin.remember(raw.id, 'core');
+        return raw;
+      } catch (error) {
+        if (!isOperationsDisabled(error)) throw error;
+      }
+    }
+    const raw = await this.#directApiService.processPayment(body, requestId);
+    this.#enginePin.remember(raw.id, 'legacy');
+    return raw;
+  }
+
+  /**
+   * Read a transaction from the engine that created it. With no remembered
+   * engine the payments API goes first, and only a `404` (the payment is not
+   * its own) falls back to the legacy route; any other failure is surfaced
+   * without a second call.
+   */
+  private async readTransaction(
+    id: string,
+    signal?: AbortSignal,
+  ): Promise<BackendTransactionResponse> {
+    const pinned = this.#enginePin.recall(id);
+    if (pinned === 'legacy') {
+      return this.#directApiService.getTransaction(id, signal);
+    }
+    try {
+      return await this.#coreApiService.getTransaction(id, signal);
+    } catch (error) {
+      if (pinned === 'core') throw error;
+      if (!(error instanceof AppError) || error.status_code !== 404) {
+        throw error;
+      }
+      return this.#directApiService.getTransaction(id, signal);
+    }
   }
 
   private async resetCardFieldsAfterSuccessfulPayment(
@@ -1277,7 +1361,7 @@ export class Tonder {
     signal?: AbortSignal,
   ): Promise<RawTransaction> {
     try {
-      const raw = await this.#directApiService.getTransaction(id, signal);
+      const raw = await this.readTransaction(id, signal);
       return toRawTransaction(raw);
     } catch (error) {
       if (error instanceof AppError) throw error;
@@ -1289,11 +1373,6 @@ export class Tonder {
   }
 
   /**
-   * Validate the pay input amount. Throws `INVALID_PAYMENT_REQUEST`. The
-   * customer is NOT validated here — it is sourced from `config.session.customer` and
-   * guarded by the pay() MISSING_CUSTOMER pre-flight before this runs.
-   */
-  /**
    * The card discriminators, case-insensitively.
    *
    * Merchants read `payment_method_type` off a webhook, see `CARD`, and pass
@@ -1304,6 +1383,12 @@ export class Tonder {
     return type.toLowerCase() === expected;
   }
 
+  /**
+   * Validate the pay input: object shape, `client_reference`, `amount` and the
+   * payment method discriminator. Throws `INVALID_PAYMENT_REQUEST`. The
+   * customer is NOT validated here — it is sourced from `config.session.customer` and
+   * guarded by the pay() MISSING_CUSTOMER pre-flight before this runs.
+   */
   private static assertValidPayInput(input: PayInput): void {
     const invalid = (system_error: string): never => {
       throw new AppError({
@@ -1322,12 +1407,24 @@ export class Tonder {
     if (typeof input.amount !== 'number' || !(input.amount > 0)) {
       invalid('input.amount must be greater than 0.');
     }
+    // Every later branch reads `payment_method.type` as a string, and plain
+    // JavaScript callers can omit it or send something else.
+    const methodType: unknown = input.payment_method?.type;
+    if (methodType === undefined || methodType === null) {
+      invalid('pay().payment_method.type is required.');
+    }
+    if (typeof methodType !== 'string') {
+      invalid('pay().payment_method.type must be a string.');
+    }
+    if (!(methodType as string).trim()) {
+      invalid('pay().payment_method.type must not be empty.');
+    }
     // Has to be a RUNTIME guard: `PaymentMethod`'s `{ type: string; config? }`
     // member accepts any string literal, so the compiler structurally cannot
     // reject this call. Without the guard it reaches `/process` as a generic
     // APM and the merchant gets a backend rejection instead of a message
     // naming the component they actually need.
-    if (input.payment_method?.type === 'apple_pay') {
+    if (Tonder.isMethodType(input.payment_method.type, 'apple_pay')) {
       invalid(
         "Apple Pay is not a pay() method. Use create('apple_pay_button', { payment }).",
       );

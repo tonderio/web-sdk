@@ -5,8 +5,6 @@ import type { BusinessConfig } from '../../models/business.model';
 import { AppError } from '../../shared/errors/AppError';
 import { ErrorKeyEnum } from '../../shared/errors/ErrorKeyEnum';
 
-const API_KEY = 'pk_test_123';
-
 function makeConfig(): BusinessConfig {
   return {
     business: {
@@ -31,6 +29,7 @@ function makeConfig(): BusinessConfig {
     reference: 'TNDR-abc',
     is_installments_available: true,
     cardonfile_keys: null,
+    core_payments_enabled: false,
   };
 }
 
@@ -39,20 +38,20 @@ function mockHttp(impl: HttpPort['request']): HttpPort {
 }
 
 describe('BusinessService.fetchBusinessConfig', () => {
-  it('GETs the business endpoint with the apiKey and returns the typed config', async () => {
+  it('GETs the transactions API business config route without the key in the path and returns the typed config', async () => {
     const config = makeConfig();
     const requestSpy = vi.fn().mockResolvedValue(config);
     const http: HttpPort = { request: requestSpy };
     const service = new BusinessService(http);
 
-    const result = await service.fetchBusinessConfig(API_KEY);
+    const result = await service.fetchBusinessConfig();
 
     expect(result).toEqual(config);
     expect(requestSpy).toHaveBeenCalledTimes(1);
     expect(requestSpy).toHaveBeenCalledWith(
       expect.objectContaining({
         method: 'GET',
-        path: `/api/v1/payments/business/${API_KEY}`,
+        path: '/transactions/v1/business/config',
       }),
     );
   });
@@ -65,7 +64,7 @@ describe('BusinessService.fetchBusinessConfig', () => {
     const http = mockHttp(() => Promise.reject(inner));
     const service = new BusinessService(http);
 
-    const err = await service.fetchBusinessConfig(API_KEY).catch((e) => e);
+    const err = await service.fetchBusinessConfig().catch((e) => e);
     expect(err).toBeInstanceOf(AppError);
     expect(err.code).toBe(ErrorKeyEnum.FETCH_BUSINESS_ERROR);
   });
@@ -74,7 +73,7 @@ describe('BusinessService.fetchBusinessConfig', () => {
     const http = mockHttp(() => Promise.reject(new Error('boom')));
     const service = new BusinessService(http);
 
-    await expect(service.fetchBusinessConfig(API_KEY)).rejects.toMatchObject({
+    await expect(service.fetchBusinessConfig()).rejects.toMatchObject({
       code: ErrorKeyEnum.FETCH_BUSINESS_ERROR,
     });
   });

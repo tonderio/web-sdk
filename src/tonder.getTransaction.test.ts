@@ -59,7 +59,7 @@ describe('Tonder.getTransaction', () => {
     expect(http.request).toHaveBeenCalledWith(
       expect.objectContaining({
         method: 'GET',
-        path: '/api/v1/transactions/tx_return/',
+        path: '/transactions/v1/tx_return',
       }),
     );
   });

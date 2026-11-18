@@ -72,15 +72,34 @@ export class FetchHttpClient implements HttpPort {
     if (!response.ok) {
       // The parsed error body is deliberately NOT carried onto the error: it is
       // backend-shaped — stack traces, internal service names, database
-      // constraints — and this error is merchant-facing. `status_code` is the
-      // one piece of the response that crosses.
+      // constraints — and this error is merchant-facing. `status_code` crosses,
+      // plus the short machine code of a structured error when there is one.
+      const errorCode = FetchHttpClient.machineErrorCode(parsedBody);
       throw new AppError({
         errorCode: ErrorKeyEnum.REQUEST_FAILED,
         status_code: response.status,
+        ...(errorCode !== undefined
+          ? { originalError: { error_code: errorCode } }
+          : {}),
       });
     }
 
     return parsedBody as T;
+  }
+
+  /**
+   * `error.code` of a `{ error: { code } }` body, only when it is a short
+   * lowercase token. Anything else (free text, another type) is dropped so
+   * backend prose never reaches the merchant-facing error.
+   */
+  private static machineErrorCode(body: unknown): string | undefined {
+    if (typeof body !== 'object' || body === null) return undefined;
+    const error = (body as { error?: unknown }).error;
+    if (typeof error !== 'object' || error === null) return undefined;
+    const code = (error as { code?: unknown }).code;
+    return typeof code === 'string' && /^[a-z0-9_]{1,64}$/.test(code)
+      ? code
+      : undefined;
   }
 
   private static isAbortError(error: unknown): boolean {
