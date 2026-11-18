@@ -609,13 +609,146 @@ describe('Tonder engine — pinned per payment', () => {
     expect(off.paths().at(-1)).toBe('GET /transactions/v1/tx_core_1');
   });
 
-  it('an id nobody pinned is read from the monolith, as today', async () => {
-    const { http, paths } = mockHttp({ config: businessConfig(true) });
-    const tonder = await ready(http);
+  describe('an id with no remembered engine', () => {
+    const notFound = () =>
+      Promise.reject(
+        new AppError({
+          errorCode: ErrorKeyEnum.REQUEST_FAILED,
+          status_code: 404,
+        }),
+      );
 
-    await tonder.getTransaction('unknown-id');
+    it('is read from the payments API first, with no legacy call', async () => {
+      const { http, paths } = mockHttp({ config: businessConfig(true) });
+      const tonder = await ready(http);
 
-    expect(paths().at(-1)).toBe('GET /api/v1/transactions/unknown-id/');
+      const result = await tonder.getTransaction('unknown-id');
+
+      expect(result.id).toBe('unknown-id');
+      expect(paths().slice(1)).toEqual(['GET /transactions/v1/unknown-id']);
+    });
+
+    it('falls back to the legacy route only when the API answers 404', async () => {
+      const { http, paths } = mockHttp({
+        config: businessConfig(true),
+        coreGet: notFound,
+      });
+      const tonder = await ready(http);
+
+      const result = await tonder.getTransaction('legacy-id');
+
+      expect(result.id).toBe('legacy-id');
+      expect(paths().slice(1)).toEqual([
+        'GET /transactions/v1/legacy-id',
+        'GET /api/v1/transactions/legacy-id/',
+      ]);
+    });
+
+    it('works before init(), as the redirect return page does', async () => {
+      const { http, paths } = mockHttp({ coreGet: notFound });
+      const tonder = _createTonderWithDeps({ config: CONFIG, http });
+
+      await tonder.getTransaction('legacy-id');
+
+      expect(paths()).toEqual([
+        'GET /transactions/v1/legacy-id',
+        'GET /api/v1/transactions/legacy-id/',
+      ]);
+    });
+
+    it.each([
+      [
+        'a 500',
+        () =>
+          Promise.reject(
+            new AppError({
+              errorCode: ErrorKeyEnum.REQUEST_FAILED,
+              status_code: 500,
+            }),
+          ),
+      ],
+      [
+        'a 503',
+        () =>
+          Promise.reject(
+            new AppError({
+              errorCode: ErrorKeyEnum.REQUEST_FAILED,
+              status_code: 503,
+            }),
+          ),
+      ],
+      [
+        'a 401',
+        () =>
+          Promise.reject(
+            new AppError({
+              errorCode: ErrorKeyEnum.REQUEST_FAILED,
+              status_code: 401,
+            }),
+          ),
+      ],
+      [
+        'a network error',
+        () => Promise.reject(new TypeError('Failed to fetch')),
+      ],
+    ])('surfaces %s without a second call', async (_label, coreGet) => {
+      const { http, paths } = mockHttp({
+        config: businessConfig(true),
+        coreGet,
+      });
+      const tonder = await ready(http);
+
+      const err = await tonder.getTransaction('x').catch((e) => e);
+
+      expect(err.code).toBe(ErrorKeyEnum.FETCH_TRANSACTION_ERROR);
+      expect(paths().slice(1)).toEqual(['GET /transactions/v1/x']);
+    });
+
+    it('surfaces the legacy error when both routes fail', async () => {
+      const { http } = mockHttp({
+        config: businessConfig(true),
+        coreGet: notFound,
+        legacyGet: notFound,
+      });
+      const tonder = await ready(http);
+
+      const err = await tonder.getTransaction('x').catch((e) => e);
+
+      expect(err.code).toBe(ErrorKeyEnum.FETCH_TRANSACTION_ERROR);
+      expect(err.status_code).toBe(404);
+    });
+  });
+
+  it('a legacy payment polls the legacy route straight, with no payments API call', async () => {
+    const messenger: CheckoutMessengerPort = {
+      waitForCompletion: vi.fn(() => Promise.resolve()),
+    };
+    const { http, paths } = mockHttp({
+      config: businessConfig(false),
+      legacyProcess: () =>
+        Promise.resolve(
+          tx({
+            id: 'tx_legacy_3',
+            status: 'Pending',
+            next_action: {
+              redirect_to_url: { url: 'https://auth.example/challenge' },
+            },
+          }),
+        ),
+    });
+    const tonder = await ready(http, {
+      config: { ...CONFIG, presentation_mode: 'embedded' },
+      host: host(),
+      messenger,
+    });
+
+    await tonder.pay(payInput());
+
+    expect(paths()).toEqual([
+      `GET ${CORE_CONFIG}`,
+      `POST ${LEGACY_PROCESS}`,
+      'GET /api/v1/transactions/tx_legacy_3/',
+    ]);
   });
 
   it('still pins within the instance when session storage is unavailable', async () => {

@@ -360,9 +360,12 @@ methods and Apple Pay) MUST stay on the legacy route whatever the flag says.
 The engine MUST be fixed when a payment starts: the SDK MUST remember it by
 transaction id (in memory and, when available, `sessionStorage`) so the payment
 keeps its engine if the flag changes or the page reloads after a redirect.
-`getTransaction(id)` for an id with no remembered engine MUST read the legacy
-route: it answers a Tonder payments API payment's id with that payment in the same
-body, so a return on another browser or device still gets the payment.
+This applies to every payment, the legacy route included, so a legacy payment
+is never read from the Tonder payments API. `getTransaction(id)` for an id with
+no remembered engine (a return on another browser or device, or before `init()`)
+MUST call `GET /transactions/v1/{id}` first. Only a `404` answer (the payment is
+not the API's) MAY be followed by one read of the legacy route; any other
+failure MUST be surfaced without a second call.
 
 When the Tonder payments API answers `503` with the error code `operations_disabled`
 to the create, the SDK MUST send the same body and request id once to the legacy
@@ -375,6 +378,14 @@ retried.
 - WHEN `pay()` is called with a card
 - THEN the create is `POST /transactions/v1/process` with an `X-Request-Id`
 - AND no request is made to `/api/v1/process/`
+
+#### Scenario: Unknown transaction id
+
+- GIVEN no engine is remembered for the id
+- WHEN `getTransaction(id)` is called
+- THEN `GET /transactions/v1/{id}` is requested first
+- AND only on `404` is `GET /api/v1/transactions/{id}/` requested once
+- AND a `5xx` or network failure rejects with `FETCH_TRANSACTION_ERROR` and no second request
 
 #### Scenario: Flag off keeps the legacy route
 

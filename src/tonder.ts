@@ -705,7 +705,8 @@ export class Tonder {
   }
 
   /**
-   * Create the payment on `engine` and pin the engine to the transaction id.
+   * Create the payment on `engine` and pin the engine that created it to the
+   * transaction id.
    *
    * A transactions API answer of `503 operations_disabled` means nothing was
    * created, so the same body and request id are sent once to the Direct API.
@@ -725,7 +726,34 @@ export class Tonder {
         if (!isOperationsDisabled(error)) throw error;
       }
     }
-    return this.#directApiService.processPayment(body, requestId);
+    const raw = await this.#directApiService.processPayment(body, requestId);
+    this.#enginePin.remember(raw.id, 'legacy');
+    return raw;
+  }
+
+  /**
+   * Read a transaction from the engine that created it. With no remembered
+   * engine the payments API goes first, and only a `404` (the payment is not
+   * its own) falls back to the legacy route; any other failure is surfaced
+   * without a second call.
+   */
+  private async readTransaction(
+    id: string,
+    signal?: AbortSignal,
+  ): Promise<BackendTransactionResponse> {
+    const pinned = this.#enginePin.recall(id);
+    if (pinned === 'legacy') {
+      return this.#directApiService.getTransaction(id, signal);
+    }
+    try {
+      return await this.#coreApiService.getTransaction(id, signal);
+    } catch (error) {
+      if (pinned === 'core') throw error;
+      if (!(error instanceof AppError) || error.status_code !== 404) {
+        throw error;
+      }
+      return this.#directApiService.getTransaction(id, signal);
+    }
   }
 
   private async resetCardFieldsAfterSuccessfulPayment(
@@ -1333,11 +1361,7 @@ export class Tonder {
     signal?: AbortSignal,
   ): Promise<RawTransaction> {
     try {
-      const service =
-        this.#enginePin.recall(id) === 'core'
-          ? this.#coreApiService
-          : this.#directApiService;
-      const raw = await service.getTransaction(id, signal);
+      const raw = await this.readTransaction(id, signal);
       return toRawTransaction(raw);
     } catch (error) {
       if (error instanceof AppError) throw error;
