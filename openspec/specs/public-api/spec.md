@@ -82,10 +82,10 @@ by joining `first_name` and `last_name` from `config.session.customer`.
 as the merchant business reference. `PayInput.idempotency_key`, when provided,
 MUST be sent as the Direct API `X-Request-Id` header for `POST /api/v1/process/`.
 When `idempotency_key` is omitted, the SDK MUST omit `X-Request-Id` entirely
-on the Direct API. The SDK MUST NOT generate a random idempotency key for the
-Direct API and MUST NOT fall back from `client_reference` to `X-Request-Id`.
+on the legacy route. The SDK MUST NOT generate a random idempotency key for
+the legacy route and MUST NOT fall back from `client_reference` to `X-Request-Id`.
 
-Exception, for a payment that runs on the transactions API (see "Card payments
+Exception, for a payment that runs on the Tonder payments API (see "Card payments
 run on the engine chosen at init()"): the SDK MUST send an `X-Request-Id` on
 `POST /transactions/v1/process`, the scoped `idempotency_key` when provided and
 otherwise a fresh id generated for that payment attempt, never reused by a
@@ -351,22 +351,22 @@ operational failure that produced none.
 
 The business configuration carries `core_payments_enabled`. When it is `true`,
 `pay()` for a new card or a saved card MUST call `POST /transactions/v1/process`
-with the same body and the same `X-App-Origin` as the Direct API call, and every
+with the same body and the same `X-App-Origin` as the legacy route call, and every
 later read of that payment (`getTransaction()` and the embedded 3DS poll) MUST
 call `GET /transactions/v1/{id}`. When it is `false` or absent, `pay()` MUST
-behave exactly as before, on the Direct API. Other payment methods (alternative
-methods and Apple Pay) MUST stay on the Direct API whatever the flag says.
+behave exactly as before, on the legacy route. Other payment methods (alternative
+methods and Apple Pay) MUST stay on the legacy route whatever the flag says.
 
 The engine MUST be fixed when a payment starts: the SDK MUST remember it by
 transaction id (in memory and, when available, `sessionStorage`) so the payment
 keeps its engine if the flag changes or the page reloads after a redirect.
-`getTransaction(id)` for an id with no remembered engine MUST read the Direct
-API: it answers a transactions API payment's id with that payment in the same
+`getTransaction(id)` for an id with no remembered engine MUST read the legacy
+route: it answers a Tonder payments API payment's id with that payment in the same
 body, so a return on another browser or device still gets the payment.
 
-When the transactions API answers `503` with the error code `operations_disabled`
-to the create, the SDK MUST send the same body and request id once to the Direct
-API and MUST NOT surface the first failure. Any other failure MUST NOT be
+When the Tonder payments API answers `503` with the error code `operations_disabled`
+to the create, the SDK MUST send the same body and request id once to the legacy
+route and MUST NOT surface the first failure. Any other failure MUST NOT be
 retried.
 
 #### Scenario: Flag on, card payment
@@ -376,7 +376,7 @@ retried.
 - THEN the create is `POST /transactions/v1/process` with an `X-Request-Id`
 - AND no request is made to `/api/v1/process/`
 
-#### Scenario: Flag off keeps the Direct API
+#### Scenario: Flag off keeps the legacy route
 
 - GIVEN `core_payments_enabled` is `false` or absent
 - WHEN `pay()` is called with a card
