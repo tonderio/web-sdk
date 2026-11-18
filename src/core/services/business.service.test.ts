@@ -34,10 +34,6 @@ function makeConfig(): BusinessConfig {
   };
 }
 
-function mockHttp(impl: HttpPort['request']): HttpPort {
-  return { request: vi.fn(impl) } as unknown as HttpPort;
-}
-
 describe('BusinessService.fetchBusinessConfig', () => {
   it('GETs the transactions API business config route without the key in the path and returns the typed config', async () => {
     const config = makeConfig();
@@ -62,7 +58,7 @@ describe('BusinessService.fetchBusinessConfig', () => {
       errorCode: ErrorKeyEnum.REQUEST_FAILED,
       status_code: 404,
     });
-    const http = mockHttp(() => Promise.reject(inner));
+    const http = asHttpPort(() => Promise.reject(inner));
     const service = new BusinessService(http);
 
     const err = await service.fetchBusinessConfig().catch((e) => e);
@@ -70,8 +66,33 @@ describe('BusinessService.fetchBusinessConfig', () => {
     expect(err.code).toBe(ErrorKeyEnum.FETCH_BUSINESS_ERROR);
   });
 
+  it('keeps the received body as the original error, not in any merchant-facing field', async () => {
+    const body = '<html>bad gateway</html>';
+    const service = new BusinessService(
+      asHttpPort(() => Promise.resolve(body)),
+    );
+
+    const err = await service.fetchBusinessConfig().catch((e) => e);
+
+    expect(err.code).toBe(ErrorKeyEnum.FETCH_BUSINESS_ERROR);
+    expect(err.originalError).toBe(body);
+    expect(err.message).not.toContain('bad gateway');
+    expect(JSON.stringify(err.details)).not.toContain('bad gateway');
+  });
+
+  it('accepts a configuration with its optional blocks absent', async () => {
+    const minimal = makeConfig();
+    const service = new BusinessService(
+      asHttpPort(() => Promise.resolve(minimal)),
+    );
+
+    await expect(service.fetchBusinessConfig()).resolves.toEqual(minimal);
+    expect(minimal.apple_pay).toBeUndefined();
+    expect(minimal.cardonfile_keys).toBeNull();
+  });
+
   it('re-wraps an unknown rejection as AppError(FETCH_BUSINESS_ERROR)', async () => {
-    const http = mockHttp(() => Promise.reject(new Error('boom')));
+    const http = asHttpPort(() => Promise.reject(new Error('boom')));
     const service = new BusinessService(http);
 
     await expect(service.fetchBusinessConfig()).rejects.toMatchObject({
@@ -82,6 +103,9 @@ describe('BusinessService.fetchBusinessConfig', () => {
   it.each([
     ['an HTML page', '<html>bad gateway</html>'],
     ['null', null],
+    ['undefined', undefined],
+    ['an empty string', ''],
+    ['a whitespace-only string', '   '],
     ['an array', []],
     ['an object without a business', { detail: 'ok' }],
     ['a business that is not an object', { business: 'x' }],

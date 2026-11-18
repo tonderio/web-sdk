@@ -23,21 +23,25 @@ export class BusinessService {
    * never in the path.
    */
   public async fetchBusinessConfig(): Promise<BusinessConfig> {
+    let config: unknown;
     try {
-      const config = await this.http.request<unknown>({
+      config = await this.http.request<unknown>({
         method: 'GET',
         path: '/transactions/v1/business/config',
       });
-      if (!BusinessService.isBusinessConfig(config)) {
-        throw new AppError({ errorCode: ErrorKeyEnum.FETCH_BUSINESS_ERROR });
-      }
-      return config;
     } catch (error) {
       throw new AppError({
         errorCode: ErrorKeyEnum.FETCH_BUSINESS_ERROR,
         originalError: error,
       });
     }
+    if (!BusinessService.isBusinessConfig(config)) {
+      throw new AppError({
+        errorCode: ErrorKeyEnum.FETCH_BUSINESS_ERROR,
+        originalError: config,
+      });
+    }
+    return config;
   }
 
   /**

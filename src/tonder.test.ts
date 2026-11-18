@@ -109,6 +109,23 @@ describe('Tonder.init', () => {
     });
   });
 
+  it('a retried init() after a failed one fetches the configuration again', async () => {
+    let answer: unknown = '<html>oops</html>';
+    const { http, spy } = mockHttpPort(() => Promise.resolve(answer));
+    const tonder = _createTonderWithDeps({ config: CONFIG, http });
+
+    await expect(tonder.init()).rejects.toMatchObject({
+      code: ErrorKeyEnum.INIT_ERROR,
+    });
+    answer = makeBusinessConfig();
+    await expect(tonder.init()).resolves.toBeUndefined();
+
+    expect(requestedPaths(spy)).toEqual([
+      '/transactions/v1/business/config',
+      '/transactions/v1/business/config',
+    ]);
+  });
+
   it('is idempotent: a second init() does not re-fetch', async () => {
     const config = makeBusinessConfig();
     const { http, spy } = mockHttpPort(() => Promise.resolve(config));
