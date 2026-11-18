@@ -1343,7 +1343,7 @@ export class Tonder {
     // reject this call. Without the guard it reaches `/process` as a generic
     // APM and the merchant gets a backend rejection instead of a message
     // naming the component they actually need.
-    if (input.payment_method?.type === 'apple_pay') {
+    if (Tonder.isMethodType(input.payment_method.type, 'apple_pay')) {
       invalid(
         "Apple Pay is not a pay() method. Use create('apple_pay_button', { payment }).",
       );

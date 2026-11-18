@@ -1073,6 +1073,24 @@ describe('Tonder.pay — saved card', () => {
     expect(missing.details.system_error).toMatch(/is required/);
   });
 
+  it.each(['apple_pay', 'APPLE_PAY', 'Apple_Pay'])(
+    'pay() with the %s method points the merchant to the Apple Pay button (no process call)',
+    async (type) => {
+      const { http, processSpy } = mockHttp(() =>
+        Promise.resolve(backendResponse()),
+      );
+      const tonder = await readyTonder(http, mockTokenizer());
+
+      const err = await tonder
+        .pay(payInput({ payment_method: { type } as never }))
+        .catch((e) => e);
+
+      expect(err.code).toBe(ErrorKeyEnum.INVALID_PAYMENT_REQUEST);
+      expect(err.details.system_error).toMatch(/apple_pay_button/);
+      expect(processSpy).not.toHaveBeenCalled();
+    },
+  );
+
   it('missing card_id → INVALID_PAYMENT_REQUEST (no process call)', async () => {
     const { http, processSpy } = mockHttp(() =>
       Promise.resolve(backendResponse()),
