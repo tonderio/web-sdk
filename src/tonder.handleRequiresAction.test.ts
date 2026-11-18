@@ -516,6 +516,39 @@ describe('Tonder.handleRequiresAction — messenger-driven reconcile (embedded)'
     expect(host.close).toHaveBeenCalledTimes(1);
   });
 
+  it.each(['CARD', 'Card'])(
+    'embedded 3DS of a %s payment method is reconciled to the final transaction, not presented as an APM',
+    async (type) => {
+      const messenger = controllableMessenger();
+      const { http } = controllableHttp({
+        onTransaction: () =>
+          Promise.resolve(backendResponse({ status: 'Authorized' })),
+      });
+      const host = mockHost();
+      const tonder = await readyTonder({ http, host, messenger });
+
+      const payPromise = tonder
+        .pay(
+          payInput({
+            payment_method: { type } as never,
+          }),
+        )
+        .catch((e) => e);
+      await vi.waitFor(() => {
+        expect(messenger.waitForCompletion).toHaveBeenCalledTimes(1);
+      });
+      messenger.fire();
+      const result = await payPromise;
+
+      expect(result.status).toBe('Authorized');
+      expect(host.open).toHaveBeenCalledWith(
+        'https://3ds.example/go',
+        expect.objectContaining({ closable: false }),
+      );
+      expect(host.close).toHaveBeenCalledTimes(1);
+    },
+  );
+
   it('embedded APM shopper-close fires events.presentation.on_close via onUserClose; onOpen wired', async () => {
     const onClose = vi.fn();
     const onOpen = vi.fn();

@@ -657,7 +657,10 @@ export class Tonder {
 
     const tx = toRawTransaction(raw);
 
-    if (inputType !== 'card' && inputType !== 'saved_card') {
+    if (
+      !Tonder.isMethodType(inputType, 'card') &&
+      !Tonder.isMethodType(inputType, 'saved_card')
+    ) {
       return await this.handleApmResult(tx);
     }
 
