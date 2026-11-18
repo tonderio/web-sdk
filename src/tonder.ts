@@ -1292,11 +1292,6 @@ export class Tonder {
   }
 
   /**
-   * Validate the pay input amount. Throws `INVALID_PAYMENT_REQUEST`. The
-   * customer is NOT validated here — it is sourced from `config.session.customer` and
-   * guarded by the pay() MISSING_CUSTOMER pre-flight before this runs.
-   */
-  /**
    * The card discriminators, case-insensitively.
    *
    * Merchants read `payment_method_type` off a webhook, see `CARD`, and pass
@@ -1307,6 +1302,12 @@ export class Tonder {
     return type.toLowerCase() === expected;
   }
 
+  /**
+   * Validate the pay input: object shape, `client_reference`, `amount` and the
+   * payment method discriminator. Throws `INVALID_PAYMENT_REQUEST`. The
+   * customer is NOT validated here — it is sourced from `config.session.customer` and
+   * guarded by the pay() MISSING_CUSTOMER pre-flight before this runs.
+   */
   private static assertValidPayInput(input: PayInput): void {
     const invalid = (system_error: string): never => {
       throw new AppError({
@@ -1324,6 +1325,18 @@ export class Tonder {
     }
     if (typeof input.amount !== 'number' || !(input.amount > 0)) {
       invalid('input.amount must be greater than 0.');
+    }
+    // Every later branch reads `payment_method.type` as a string, and plain
+    // JavaScript callers can omit it or send something else.
+    const methodType: unknown = input.payment_method?.type;
+    if (methodType === undefined || methodType === null) {
+      invalid('pay().payment_method.type is required.');
+    }
+    if (typeof methodType !== 'string') {
+      invalid('pay().payment_method.type must be a string.');
+    }
+    if (!(methodType as string).trim()) {
+      invalid('pay().payment_method.type must not be empty.');
     }
     // Has to be a RUNTIME guard: `PaymentMethod`'s `{ type: string; config? }`
     // member accepts any string literal, so the compiler structurally cannot

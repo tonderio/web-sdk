@@ -1027,6 +1027,52 @@ describe('Tonder.pay — saved card', () => {
     expect(result.next_action).toBeDefined();
   });
 
+  it.each([
+    ['no payment_method', undefined],
+    ['no type', {}],
+    ['a non-string type', { type: 123 }],
+    ['an empty type', { type: '' }],
+    ['a whitespace-only type', { type: '   ' }],
+  ])(
+    '%s → INVALID_PAYMENT_REQUEST and on_error, never a raw TypeError (no process call)',
+    async (_label, paymentMethod) => {
+      const { http, processSpy } = mockHttp(() =>
+        Promise.resolve(backendResponse()),
+      );
+      const onError = vi.fn();
+      const tonder = _createTonderWithDeps({
+        config: { ...CONFIG, events: { payment: { on_error: onError } } },
+        http,
+        tokenizer: mockTokenizer(),
+      });
+      await tonder.init();
+
+      const err = await tonder
+        .pay(payInput({ payment_method: paymentMethod as never }))
+        .catch((e) => e);
+
+      expect(err).toBeInstanceOf(AppError);
+      expect(err.code).toBe(ErrorKeyEnum.INVALID_PAYMENT_REQUEST);
+      expect(onError).toHaveBeenCalledTimes(1);
+      expect(processSpy).not.toHaveBeenCalled();
+    },
+  );
+
+  it('names the problem: a non-string type is not reported as missing', async () => {
+    const { http } = mockHttp(() => Promise.resolve(backendResponse()));
+    const tonder = await readyTonder(http, mockTokenizer());
+
+    const nonString = await tonder
+      .pay(payInput({ payment_method: { type: 123 } as never }))
+      .catch((e) => e);
+    const missing = await tonder
+      .pay(payInput({ payment_method: undefined as never }))
+      .catch((e) => e);
+
+    expect(nonString.details.system_error).toMatch(/must be a string/);
+    expect(missing.details.system_error).toMatch(/is required/);
+  });
+
   it('missing card_id → INVALID_PAYMENT_REQUEST (no process call)', async () => {
     const { http, processSpy } = mockHttp(() =>
       Promise.resolve(backendResponse()),
