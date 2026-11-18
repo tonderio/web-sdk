@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { BusinessService } from './business.service';
 import type { HttpPort } from '../../ports/http.port';
 import type { BusinessConfig } from '../../models/business.model';
+import { asHttpPort } from '../../test-support/http.mock';
 import { AppError } from '../../shared/errors/AppError';
 import { ErrorKeyEnum } from '../../shared/errors/ErrorKeyEnum';
 
@@ -77,4 +78,22 @@ describe('BusinessService.fetchBusinessConfig', () => {
       code: ErrorKeyEnum.FETCH_BUSINESS_ERROR,
     });
   });
+
+  it.each([
+    ['an HTML page', '<html>bad gateway</html>'],
+    ['null', null],
+    ['an array', []],
+    ['an object without a business', { detail: 'ok' }],
+    ['a business that is not an object', { business: 'x' }],
+  ])(
+    'rejects a 2xx answer that is %s as FETCH_BUSINESS_ERROR',
+    async (_label, body) => {
+      const http = asHttpPort(() => Promise.resolve(body));
+      const service = new BusinessService(http);
+
+      await expect(service.fetchBusinessConfig()).rejects.toMatchObject({
+        code: ErrorKeyEnum.FETCH_BUSINESS_ERROR,
+      });
+    },
+  );
 });

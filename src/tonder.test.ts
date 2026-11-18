@@ -96,6 +96,19 @@ describe('Tonder.init', () => {
     expect(err.code).toBe(ErrorKeyEnum.INIT_ERROR);
   });
 
+  it('a non-JSON 2xx answer fails init() cleanly instead of reaching ready', async () => {
+    const { http } = mockHttpPort(() => Promise.resolve('<html>oops</html>'));
+    const tonder = _createTonderWithDeps({ config: CONFIG, http });
+
+    const err = await tonder.init().catch((e) => e);
+
+    expect(err).toBeInstanceOf(AppError);
+    expect(err.code).toBe(ErrorKeyEnum.INIT_ERROR);
+    await expect(tonder.pay({} as never)).rejects.toMatchObject({
+      code: ErrorKeyEnum.NOT_INITIALIZED,
+    });
+  });
+
   it('is idempotent: a second init() does not re-fetch', async () => {
     const config = makeBusinessConfig();
     const { http, spy } = mockHttpPort(() => Promise.resolve(config));

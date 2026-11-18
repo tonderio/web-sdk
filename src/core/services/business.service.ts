@@ -24,15 +24,32 @@ export class BusinessService {
    */
   public async fetchBusinessConfig(): Promise<BusinessConfig> {
     try {
-      return await this.http.request<BusinessConfig>({
+      const config = await this.http.request<unknown>({
         method: 'GET',
         path: '/transactions/v1/business/config',
       });
+      if (!BusinessService.isBusinessConfig(config)) {
+        throw new AppError({ errorCode: ErrorKeyEnum.FETCH_BUSINESS_ERROR });
+      }
+      return config;
     } catch (error) {
       throw new AppError({
         errorCode: ErrorKeyEnum.FETCH_BUSINESS_ERROR,
         originalError: error,
       });
     }
+  }
+
+  /**
+   * A 2xx answer that is not the configuration (a proxy's HTML page, an empty
+   * body) must fail start-up instead of leaving the SDK ready with nothing
+   * configured.
+   */
+  private static isBusinessConfig(value: unknown): value is BusinessConfig {
+    if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+      return false;
+    }
+    const business = (value as { business?: unknown }).business;
+    return typeof business === 'object' && business !== null;
   }
 }
