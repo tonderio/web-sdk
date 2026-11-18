@@ -83,7 +83,7 @@ function build(options: {
 }) {
   const calls: string[] = [];
   const http: HttpPort = asHttpPort((request: HttpRequestOptions) => {
-    if (request.path.startsWith('/api/v1/payments/business/')) {
+    if (request.path === '/transactions/v1/business/config') {
       return Promise.resolve(
         makeBusinessConfig(options.business, options.profile),
       );

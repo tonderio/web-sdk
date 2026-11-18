@@ -23,4 +23,11 @@ describe('resolveEnv', () => {
       resolveEnv('production').assets,
     );
   });
+
+  it.each<TonderMode>(['production', 'stage', 'sandbox'])(
+    'serves the %s transactions API from the acquirer host',
+    (mode) => {
+      expect(resolveEnv(mode).core).toBe(resolveEnv(mode).acquirer);
+    },
+  );
 });

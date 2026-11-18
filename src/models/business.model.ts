@@ -1,5 +1,5 @@
 /**
- * Business configuration returned by `GET /api/v1/payments/business/{apiKey}`.
+ * Business configuration returned by `GET /transactions/v1/business/config`.
  *
  * Mirrors the backend shape, plus the defaults for its own optional fields. NO
  * imports from `core/`, to avoid dependency cycles.
@@ -114,4 +114,10 @@ export interface BusinessConfig {
   reference: string;
   is_installments_available: boolean;
   cardonfile_keys: CardOnFileKeys | null;
+  /**
+   * Whether this business's card payments run on the transactions API. Read
+   * once at `init()` and fixed for each payment from the moment it starts.
+   * Absent (an older backend) behaves as `false`.
+   */
+  core_payments_enabled?: boolean;
 }

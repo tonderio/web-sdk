@@ -1,5 +1,9 @@
 import { describe, it, expect, vi } from 'vitest';
-import { DirectApiService } from './direct-api.service';
+import {
+  CORE_API_ROUTES,
+  DirectApiService,
+  isOperationsDisabled,
+} from './direct-api.service';
 import { asHttpPort } from '../../test-support/http.mock';
 import type { ProcessPaymentBody } from './direct-api.service';
 import { buildApplePayPaymentMethod } from '../strategies/apple-pay.strategy';
@@ -344,5 +348,138 @@ describe('ProcessPaymentBody.payment_method — Apple Pay member', () => {
       type: 'APPLE_PAY',
       token: { paymentData: { signature: 'sig' } },
     });
+  });
+});
+
+describe('DirectApiService on the transactions API routes', () => {
+  it('POSTs to /transactions/v1/process and GETs /transactions/v1/{id}', async () => {
+    const spy = vi.fn().mockResolvedValue(makeResponse());
+    const service = new DirectApiService({ request: spy }, CORE_API_ROUTES);
+
+    await service.processPayment(makeBody(), REQUEST_ID);
+    await service.getTransaction('0190-abc');
+
+    expect(spy).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        method: 'POST',
+        path: '/transactions/v1/process',
+        headers: { 'X-Request-Id': REQUEST_ID },
+      }),
+    );
+    expect(spy).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        method: 'GET',
+        path: '/transactions/v1/0190-abc',
+      }),
+    );
+  });
+
+  it('keeps wrapping a transport failure as PAYMENT_PROCESS_ERROR / FETCH_TRANSACTION_ERROR', async () => {
+    const service = new DirectApiService(
+      { request: vi.fn().mockRejectedValue(new Error('boom')) },
+      CORE_API_ROUTES,
+    );
+
+    await expect(service.processPayment(makeBody())).rejects.toMatchObject({
+      code: ErrorKeyEnum.PAYMENT_PROCESS_ERROR,
+    });
+    await expect(service.getTransaction('x')).rejects.toMatchObject({
+      code: ErrorKeyEnum.FETCH_TRANSACTION_ERROR,
+    });
+  });
+});
+
+describe('isOperationsDisabled', () => {
+  const disabled = new AppError({
+    errorCode: ErrorKeyEnum.REQUEST_FAILED,
+    status_code: 503,
+    originalError: { error_code: 'operations_disabled' },
+  });
+
+  it('recognises the emergency-stop answer through the service wrapping', async () => {
+    const service = new DirectApiService(
+      { request: vi.fn().mockRejectedValue(disabled) },
+      CORE_API_ROUTES,
+    );
+
+    const err = await service.processPayment(makeBody()).catch((e) => e);
+
+    expect(isOperationsDisabled(err)).toBe(true);
+  });
+
+  it.each([500, 502, 504, 429])(
+    'does not match a %s that carries the code (only a 503 is the stop)',
+    async (status) => {
+      const err = new AppError({
+        errorCode: ErrorKeyEnum.REQUEST_FAILED,
+        status_code: status,
+        originalError: { error_code: 'operations_disabled' },
+      });
+      const service = new DirectApiService(
+        { request: vi.fn().mockRejectedValue(err) },
+        CORE_API_ROUTES,
+      );
+
+      const wrapped = await service.processPayment(makeBody()).catch((e) => e);
+
+      expect(isOperationsDisabled(err)).toBe(false);
+      expect(isOperationsDisabled(wrapped)).toBe(false);
+    },
+  );
+
+  it('recognises the code on the error itself, not only on its cause', () => {
+    expect(
+      isOperationsDisabled({
+        status_code: 503,
+        error_code: 'operations_disabled',
+      }),
+    ).toBe(true);
+    expect(
+      isOperationsDisabled({
+        status_code: 500,
+        error_code: 'operations_disabled',
+      }),
+    ).toBe(false);
+  });
+
+  it('takes the status of the record that carries the code, whatever wraps it', () => {
+    const cause = new AppError({
+      errorCode: ErrorKeyEnum.REQUEST_FAILED,
+      status_code: 503,
+      originalError: { error_code: 'operations_disabled' },
+    });
+    const wrapper = Object.assign(new Error('wrapped'), {
+      status_code: 500,
+      originalError: cause,
+    });
+
+    expect(isOperationsDisabled(wrapper)).toBe(true);
+  });
+
+  it('does not match a network failure', () => {
+    const net = new AppError({
+      errorCode: ErrorKeyEnum.REQUEST_FAILED,
+      originalError: new TypeError('Failed to fetch'),
+    });
+    expect(isOperationsDisabled(net)).toBe(false);
+  });
+
+  it('does not match another 503, another code or a non-error', () => {
+    const plain503 = new AppError({
+      errorCode: ErrorKeyEnum.REQUEST_FAILED,
+      status_code: 503,
+    });
+    const otherCode = new AppError({
+      errorCode: ErrorKeyEnum.REQUEST_FAILED,
+      status_code: 503,
+      originalError: { error_code: 'service_unavailable' },
+    });
+
+    expect(isOperationsDisabled(plain503)).toBe(false);
+    expect(isOperationsDisabled(otherCode)).toBe(false);
+    expect(isOperationsDisabled(undefined)).toBe(false);
+    expect(isOperationsDisabled(new Error('x'))).toBe(false);
   });
 });

@@ -81,9 +81,15 @@ by joining `first_name` and `last_name` from `config.session.customer`.
 `PayInput.client_reference` MUST be required and remain in the `/process` body
 as the merchant business reference. `PayInput.idempotency_key`, when provided,
 MUST be sent as the Direct API `X-Request-Id` header for `POST /api/v1/process/`.
-When `idempotency_key` is omitted, the SDK MUST omit `X-Request-Id` entirely.
-The SDK MUST NOT generate a random idempotency key and MUST NOT fall back from
-`client_reference` to `X-Request-Id`.
+When `idempotency_key` is omitted, the SDK MUST omit `X-Request-Id` entirely
+on the Direct API. The SDK MUST NOT generate a random idempotency key for the
+Direct API and MUST NOT fall back from `client_reference` to `X-Request-Id`.
+
+Exception, for a payment that runs on the transactions API (see "Card payments
+run on the engine chosen at init()"): the SDK MUST send an `X-Request-Id` on
+`POST /transactions/v1/process`, the scoped `idempotency_key` when provided and
+otherwise a fresh id generated for that payment attempt, never reused by a
+later `pay()` call.
 
 #### Scenario: pay() with a configured customer sends a derived name and email
 
@@ -247,8 +253,9 @@ anonymous inline shape.
 
 ### Requirement: init() fetches business config and the Apple Pay catalog concurrently; the catalog leg is non-fatal
 
-`init()` MUST issue exactly one request — `GET /api/v1/payments/business/{api_key}`
-— via the injected `HttpPort`. No concurrent or chained Apple Pay
+`init()` MUST issue exactly one request — `GET /transactions/v1/business/config`
+— via the injected `HttpPort`. The API key travels in the `Authorization`
+header, never in the path. No concurrent or chained Apple Pay
 payment-method-catalog request MUST run inside `init()`. `init()` MUST reach
 `lifecycle: 'ready'` when that request resolves, and MUST reach
 `lifecycle: 'error'` and throw `AppError(INIT_ERROR)` when it rejects. Every
@@ -265,7 +272,7 @@ rejection handled independently and non-fatal to `init()`'s ready state.)
 
 - GIVEN a fake `HttpPort`
 - WHEN `init()` is called
-- THEN exactly one request is issued, targeting `GET /api/v1/payments/business/{api_key}`
+- THEN exactly one request is issued, targeting `GET /transactions/v1/business/config`
 
 #### Scenario: A rejecting business-config request still fails init() as before
 
@@ -339,3 +346,44 @@ operational failure that produced none.
 - GIVEN `config.events.payment` is not set
 - WHEN the full existing `pay()` test suite runs
 - THEN it passes unchanged — `pay()`'s returned promise and thrown errors are unaffected by the callbacks' absence
+
+### Requirement: Card payments run on the engine chosen at init()
+
+The business configuration carries `core_payments_enabled`. When it is `true`,
+`pay()` for a new card or a saved card MUST call `POST /transactions/v1/process`
+with the same body and the same `X-App-Origin` as the Direct API call, and every
+later read of that payment (`getTransaction()` and the embedded 3DS poll) MUST
+call `GET /transactions/v1/{id}`. When it is `false` or absent, `pay()` MUST
+behave exactly as before, on the Direct API. Other payment methods (alternative
+methods and Apple Pay) MUST stay on the Direct API whatever the flag says.
+
+The engine MUST be fixed when a payment starts: the SDK MUST remember it by
+transaction id (in memory and, when available, `sessionStorage`) so the payment
+keeps its engine if the flag changes or the page reloads after a redirect.
+`getTransaction(id)` for an id with no remembered engine MUST read the Direct
+API: it answers a transactions API payment's id with that payment in the same
+body, so a return on another browser or device still gets the payment.
+
+When the transactions API answers `503` with the error code `operations_disabled`
+to the create, the SDK MUST send the same body and request id once to the Direct
+API and MUST NOT surface the first failure. Any other failure MUST NOT be
+retried.
+
+#### Scenario: Flag on, card payment
+
+- GIVEN `core_payments_enabled` is `true`
+- WHEN `pay()` is called with a card
+- THEN the create is `POST /transactions/v1/process` with an `X-Request-Id`
+- AND no request is made to `/api/v1/process/`
+
+#### Scenario: Flag off keeps the Direct API
+
+- GIVEN `core_payments_enabled` is `false` or absent
+- WHEN `pay()` is called with a card
+- THEN the create is `POST /api/v1/process/` with no `X-Request-Id`
+
+#### Scenario: Emergency stop falls back once
+
+- GIVEN `core_payments_enabled` is `true`
+- WHEN the create answers `503` with code `operations_disabled`
+- THEN the same body and request id are sent once to `/api/v1/process/`

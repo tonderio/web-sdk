@@ -83,11 +83,60 @@ export interface ProcessPaymentBody {
   billing_address?: BillingAddress;
 }
 
+/** The two routes that differ between the engines a payment can run on. */
+export interface PaymentRoutes {
+  process: string;
+  transaction: (id: string) => string;
+}
+
+/** Routes of the monolith's Direct API. */
+export const LEGACY_API_ROUTES: PaymentRoutes = {
+  process: '/api/v1/process/',
+  transaction: (id) => `/api/v1/transactions/${id}/`,
+};
+
+/** Routes of the transactions API. */
+export const CORE_API_ROUTES: PaymentRoutes = {
+  process: '/transactions/v1/process',
+  transaction: (id) => `/transactions/v1/${id}`,
+};
+
+/**
+ * Whether a failed `processPayment` was the transactions API's emergency stop:
+ * status `503` with the `operations_disabled` code, and only that status.
+ * Nothing was created, so the same payment may be retried once on the Direct
+ * API. Looks through the service's own wrapping. Any other failure is not it,
+ * a bare `503` or another status carrying the code included.
+ */
+export function isOperationsDisabled(error: unknown): boolean {
+  let current: unknown = error;
+  for (
+    let depth = 0;
+    depth < 3 && typeof current === 'object' && current;
+    depth += 1
+  ) {
+    const record = current as {
+      status_code?: unknown;
+      error_code?: unknown;
+      originalError?: unknown;
+    };
+    const cause = record.originalError as { error_code?: unknown } | undefined;
+    if (
+      record.error_code === 'operations_disabled' ||
+      cause?.error_code === 'operations_disabled'
+    ) {
+      return record.status_code === 503;
+    }
+    current = record.originalError;
+  }
+  return false;
+}
+
 /**
  * Domain service that processes a one-shot payment via the Direct API.
  *
  * PURE: depends only on the injected {@link HttpPort} — never on `fetch`/DOM.
- * `processPayment` POSTs to `/api/v1/process/` with `X-Request-Id` only
+ * `processPayment` POSTs to the engine's process route with `X-Request-Id` only
  * when the caller supplies an idempotency key. `presentation_mode` travels in
  * the request body so Direct API users and SDK users share the same contract.
  * Every transport failure is wrapped UNCONDITIONALLY as
@@ -99,9 +148,11 @@ export interface ProcessPaymentBody {
  */
 export class DirectApiService {
   private readonly http: HttpPort;
+  private readonly routes: PaymentRoutes;
 
-  constructor(http: HttpPort) {
+  constructor(http: HttpPort, routes: PaymentRoutes = LEGACY_API_ROUTES) {
     this.http = http;
+    this.routes = routes;
   }
 
   public async processPayment(
@@ -111,7 +162,7 @@ export class DirectApiService {
     try {
       return await this.http.request<BackendTransactionResponse>({
         method: 'POST',
-        path: '/api/v1/process/',
+        path: this.routes.process,
         body,
         headers: {
           ...(requestId !== undefined ? { 'X-Request-Id': requestId } : {}),
@@ -143,7 +194,7 @@ export class DirectApiService {
     try {
       return await this.http.request<BackendTransactionResponse>({
         method: 'GET',
-        path: `/api/v1/transactions/${id}/`,
+        path: this.routes.transaction(id),
         ...(signal ? { signal } : {}),
       });
     } catch (error) {

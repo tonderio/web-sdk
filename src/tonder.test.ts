@@ -79,9 +79,7 @@ describe('Tonder.init', () => {
     // A count-and-path pair is the assertion, never "no request went to
     // /api/v1/payment_methods": that phrasing stays green if the business
     // request disappeared too, which is the failure worth catching here.
-    expect(requestedPaths(spy)).toEqual([
-      `/api/v1/payments/business/${CONFIG.api_key}`,
-    ]);
+    expect(requestedPaths(spy)).toEqual(['/transactions/v1/business/config']);
     expect(tokenizer.mount).toHaveBeenCalledWith({ fields: ['card_number'] });
   });
 
@@ -107,9 +105,7 @@ describe('Tonder.init', () => {
     await tonder.init();
 
     // One request in total, not one per call.
-    expect(requestedPaths(spy)).toEqual([
-      `/api/v1/payments/business/${CONFIG.api_key}`,
-    ]);
+    expect(requestedPaths(spy)).toEqual(['/transactions/v1/business/config']);
   });
 
   it('createTonder WITHOUT a customer stays legal: init reaches ready for read-only usage', async () => {

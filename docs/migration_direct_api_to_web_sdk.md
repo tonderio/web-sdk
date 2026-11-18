@@ -6,6 +6,8 @@ For merchants already charging through Tonder Direct API server-to-server, who w
 
 **Your backend contract does not change.** The SDK posts to the same `/api/v1/process/` with the same body shape, returns the same transaction, and fires the same webhooks. Your reconciliation, your `client_reference` correlation, your webhook handler, and your `GET /api/v1/transactions/{id}/` polling all keep working untouched.
 
+If your business is enabled for the new transactions API, the SDK sends card payments to `POST /transactions/v1/process` and reads them from `GET /transactions/v1/{id}` instead; the body, the transaction you get back and the webhooks are the same. You do not configure this: the SDK reads it from your business settings when `init()` runs.
+
 What changes is only this:
 
 | Today                                      | With the SDK                                                 |

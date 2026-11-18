@@ -15,6 +15,12 @@ export interface TonderBaseUrls {
   api: string;
   /** Card processing host used by card and Card-on-File flows. */
   acquirer: string;
+  /**
+   * Host of the transactions API (business configuration and card payments
+   * when the business runs on it). It is served on the acquirer's domain under
+   * its own base path, so it always equals {@link TonderBaseUrls.acquirer}.
+   */
+  core: string;
   /** Hosted payment/authentication page host used for embedded or redirect flows. */
   payflow: string;
   /**
@@ -31,12 +37,14 @@ const ENV_URLS: Record<TonderMode, TonderBaseUrls> = {
   production: {
     api: 'https://app.tonder.io',
     acquirer: 'https://api.tonder.io',
+    core: 'https://api.tonder.io',
     payflow: 'https://payflow.tonder.io',
     assets: 'https://d35a75syrgujp0.cloudfront.net',
   },
   stage: {
     api: 'https://stage.tonder.io',
     acquirer: 'https://api-stage.tonder.io',
+    core: 'https://api-stage.tonder.io',
     payflow: 'https://stage-payflow.tonder.io',
     assets: 'https://static.staging.tonder.io',
   },
@@ -46,6 +54,7 @@ const ENV_URLS: Record<TonderMode, TonderBaseUrls> = {
   sandbox: {
     api: 'https://stage.tonder.io',
     acquirer: 'https://api-stage.tonder.io',
+    core: 'https://api-stage.tonder.io',
     payflow: 'https://stage-payflow.tonder.io',
     assets: 'https://static.staging.tonder.io',
   },
