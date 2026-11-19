@@ -1971,21 +1971,22 @@ Use webhooks when:
 
 Tonder webhooks use a flat payload: fields are at the top level, not wrapped in a nested `data` object. Common payment fields include:
 
-| Field                 | Type   | Description                                                                                                                                         |
-| --------------------- | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `id`                  | string | **The transaction's id** — the same one `pay()` returns and `getTransaction()` takes. Not unique per event: every event for one payment carries it. |
-| `operation_type`      | string | Operation type, usually `payment` for this SDK.                                                                                                     |
-| `amount`              | string | Transaction amount as sent by the webhook event.                                                                                                    |
-| `currency`            | string | ISO currency code, for example `MXN`.                                                                                                               |
-| `client_reference`    | string | Your own order/reference identifier.                                                                                                                |
-| `status`              | string | Current transaction status. See [Payment statuses](#payment-statuses).                                                                              |
-| `provider`            | string | The provider that processed the transaction.                                                                                                        |
-| `transaction_id`      | string | A Tonder-internal id for the processing record. Quote it to support; do not correlate your orders on it.                                            |
-| `payment_method_type` | string | Payment method used, for example `CARD`, `SPEI`, or `OXXO`.                                                                                         |
-| `created`             | string | ISO timestamp for the event.                                                                                                                        |
-| `metadata`            | object | Metadata you passed when creating the payment.                                                                                                      |
-| `event_type`          | string | `<operation_type>_<status>`, for example `payment_Success` or `payment_Pending`. This is what changes between events for the same payment.          |
-| `action`              | string | Event action, for example `MODIFY`.                                                                                                                 |
+| Field                 | Type   | Description                                                                                                                                                        |
+| --------------------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `id`                  | string | **The transaction's id** — the same one `pay()` returns and `getTransaction()` takes. Each transaction has its own id; every event of that transaction carries it. |
+| `payment_id`          | string | Groups the payment. A shopper who retries with a new card starts a new transaction (new `id`) under the same `payment_id`. Present when the payment has one.       |
+| `operation_type`      | string | Operation type, usually `payment` for this SDK.                                                                                                                    |
+| `amount`              | string | Transaction amount as sent by the webhook event.                                                                                                                   |
+| `currency`            | string | ISO currency code, for example `MXN`.                                                                                                                              |
+| `client_reference`    | string | Your own order/reference identifier.                                                                                                                               |
+| `status`              | string | Current transaction status. See [Payment statuses](#payment-statuses).                                                                                             |
+| `provider`            | string | The provider that processed the transaction.                                                                                                                       |
+| `transaction_id`      | string | A Tonder-internal id for the processing record. Quote it to support; do not correlate your orders on it.                                                           |
+| `payment_method_type` | string | Payment method used, for example `CARD`, `SPEI`, or `OXXO`.                                                                                                        |
+| `created`             | string | ISO timestamp for the event.                                                                                                                                       |
+| `metadata`            | object | Metadata you passed when creating the payment.                                                                                                                     |
+| `event_type`          | string | `<operation_type>_<status>`, for example `payment_Success` or `payment_Pending`. This is what changes between events for the same payment.                         |
+| `action`              | string | Event action, for example `MODIFY`.                                                                                                                                |
 
 Example `payment_Success` event:
 
@@ -2015,7 +2016,7 @@ Webhook endpoint checklist:
 - Verify the request comes from Tonder according to your account configuration.
 - Respond within 30 seconds — that is the delivery timeout, not a suggestion.
 - Return any `2xx` status to acknowledge receipt. Anything else counts as a failure.
-- Make processing idempotent, but **do not deduplicate on `id` alone**. One payment emits several events — a `Pending` then a `Success`, say — and they all carry the same `id`. Key on `id` together with `status`, or you will drop the event that says the money arrived.
+- Make processing idempotent, but **do not deduplicate on `id` alone**. One transaction emits several events — a `Pending` then a `Success`, say — and they all carry the same `id`. Key on `id` together with `status`, or you will drop the event that says the money arrived. A retry with a new card is a new transaction with a new `id`; use `payment_id` to group them.
 
 **Delivery is retried, but not forever.** Tonder attempts each event up to three times, 60 seconds apart. An event that fails all three goes to a dead-letter queue and is kept for 30 days for manual reprocessing — so an endpoint that is down for an hour does not lose the payment, but it does mean your own reconciliation has to close the gap rather than waiting for a delivery that is no longer coming. `getTransaction()` is how you close it.
 
