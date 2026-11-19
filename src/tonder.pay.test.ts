@@ -532,6 +532,7 @@ describe('Tonder.pay — happy paths', () => {
             expiration_month: 'tok_m',
             expiration_year: 'tok_y',
             cardholder_name: 'tok_name',
+            skyflow_id: 'sky_1',
           },
           client_reference: 'order_123',
         }),
@@ -743,6 +744,7 @@ describe('Tonder.pay — COF-active new-card auto enrollment', () => {
       expiration_month: 'tok_m',
       expiration_year: 'tok_y',
       cardholder_name: 'tok_name',
+      skyflow_id: 'sky_1',
     });
   });
 
@@ -1259,6 +1261,7 @@ describe('Tonder.pay — 3DS body shape (no embedded_completion flag)', () => {
             expiration_month: 'tok_m',
             expiration_year: 'tok_y',
             cardholder_name: 'tok_name',
+            skyflow_id: 'sky_1',
           },
         }),
       }),
