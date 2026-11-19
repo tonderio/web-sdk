@@ -13,6 +13,8 @@ export interface CardPaymentMethod {
   expiration_month: string;
   expiration_year: string;
   cardholder_name: string;
+  /** The card's vault record id, present only when the collect returned one. */
+  skyflow_id?: string;
 }
 
 /**
@@ -34,6 +36,10 @@ export interface SavedCardPaymentMethod {
  * and the webhook echoes it back as `payment_method_type`, so normalizing here
  * is what keeps that field the same value for every merchant. Send it through
  * as typed and one merchant's webhooks read `card` while another's read `CARD`.
+ *
+ * `skyflow_id` rides beside the tokens because the backend needs the vault
+ * record id to run the BIN lookup (brand, type, country, bank). It is omitted,
+ * never sent empty, when the collect did not return one.
  */
 export function buildCardPaymentMethod(
   tokens: Record<string, string>,
@@ -45,6 +51,7 @@ export function buildCardPaymentMethod(
     expiration_month: tokens.expiration_month ?? '',
     expiration_year: tokens.expiration_year ?? '',
     cardholder_name: tokens.cardholder_name ?? '',
+    ...(tokens.skyflow_id ? { skyflow_id: tokens.skyflow_id } : {}),
   };
 }
 
