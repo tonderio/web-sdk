@@ -699,7 +699,10 @@ export class Tonder {
     const isCard =
       Tonder.isMethodType(inputType, 'card') ||
       Tonder.isMethodType(inputType, 'saved_card');
-    return isCard && this.#core.getState().business?.core_payments_enabled
+    // Strictly the boolean `true`: a string or number from a wrong-shaped
+    // answer must never route a payment to the transactions API.
+    return isCard &&
+      this.#core.getState().business?.core_payments_enabled === true
       ? 'core'
       : 'legacy';
   }

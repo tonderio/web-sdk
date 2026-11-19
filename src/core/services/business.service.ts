@@ -23,8 +23,9 @@ export class BusinessService {
    * never in the path.
    */
   public async fetchBusinessConfig(): Promise<BusinessConfig> {
+    let config: unknown;
     try {
-      return await this.http.request<BusinessConfig>({
+      config = await this.http.request<unknown>({
         method: 'GET',
         path: '/transactions/v1/business/config',
       });
@@ -34,5 +35,25 @@ export class BusinessService {
         originalError: error,
       });
     }
+    if (!BusinessService.isBusinessConfig(config)) {
+      throw new AppError({
+        errorCode: ErrorKeyEnum.FETCH_BUSINESS_ERROR,
+        originalError: config,
+      });
+    }
+    return config;
+  }
+
+  /**
+   * A 2xx answer that is not the configuration (a proxy's HTML page, an empty
+   * body) must fail start-up instead of leaving the SDK ready with nothing
+   * configured.
+   */
+  private static isBusinessConfig(value: unknown): value is BusinessConfig {
+    if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+      return false;
+    }
+    const business = (value as { business?: unknown }).business;
+    return typeof business === 'object' && business !== null;
   }
 }

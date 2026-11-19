@@ -317,6 +317,25 @@ describe('Tonder engine — flag ON routes card payments to the core', () => {
     },
   );
 
+  it.each([
+    ['the string "false"', 'false'],
+    ['the string "true"', 'true'],
+    ['the number 1', 1],
+    ['null', null],
+  ])(
+    'a core_payments_enabled that is %s is not the boolean true: legacy route',
+    async (_label, flag) => {
+      const { http, paths } = mockHttp({
+        config: { ...businessConfig(), core_payments_enabled: flag } as never,
+      });
+      const tonder = await ready(http);
+
+      await tonder.pay(payInput());
+
+      expect(paths()).toEqual([`GET ${CORE_CONFIG}`, `POST ${LEGACY_PROCESS}`]);
+    },
+  );
+
   it('an APM payment stays on the legacy flow whatever the flag says', async () => {
     const { http, paths } = mockHttp({ config: businessConfig(true) });
     const tonder = await ready(http);

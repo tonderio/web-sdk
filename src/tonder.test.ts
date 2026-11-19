@@ -96,6 +96,36 @@ describe('Tonder.init', () => {
     expect(err.code).toBe(ErrorKeyEnum.INIT_ERROR);
   });
 
+  it('a non-JSON 2xx answer fails init() cleanly instead of reaching ready', async () => {
+    const { http } = mockHttpPort(() => Promise.resolve('<html>oops</html>'));
+    const tonder = _createTonderWithDeps({ config: CONFIG, http });
+
+    const err = await tonder.init().catch((e) => e);
+
+    expect(err).toBeInstanceOf(AppError);
+    expect(err.code).toBe(ErrorKeyEnum.INIT_ERROR);
+    await expect(tonder.pay({} as never)).rejects.toMatchObject({
+      code: ErrorKeyEnum.NOT_INITIALIZED,
+    });
+  });
+
+  it('a retried init() after a failed one fetches the configuration again', async () => {
+    let answer: unknown = '<html>oops</html>';
+    const { http, spy } = mockHttpPort(() => Promise.resolve(answer));
+    const tonder = _createTonderWithDeps({ config: CONFIG, http });
+
+    await expect(tonder.init()).rejects.toMatchObject({
+      code: ErrorKeyEnum.INIT_ERROR,
+    });
+    answer = makeBusinessConfig();
+    await expect(tonder.init()).resolves.toBeUndefined();
+
+    expect(requestedPaths(spy)).toEqual([
+      '/transactions/v1/business/config',
+      '/transactions/v1/business/config',
+    ]);
+  });
+
   it('is idempotent: a second init() does not re-fetch', async () => {
     const config = makeBusinessConfig();
     const { http, spy } = mockHttpPort(() => Promise.resolve(config));
