@@ -6,7 +6,7 @@ import { AppError } from '../../shared/errors/AppError';
 import { ErrorKeyEnum } from '../../shared/errors/ErrorKeyEnum';
 import { MESSAGES_EN } from '../../shared/errors/messages';
 
-const VALIDATE_PATH = '/api/v1/payments/apple-pay/validate-merchant/';
+const VALIDATE_PATH = '/transactions/v1/apple-pay/validate-merchant';
 
 type FakeRequest = (options: HttpRequestOptions) => Promise<unknown>;
 

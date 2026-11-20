@@ -5,7 +5,7 @@ import { AppError } from '../../shared/errors/AppError';
 import { ErrorKeyEnum } from '../../shared/errors/ErrorKeyEnum';
 
 describe('VaultService.fetchVaultToken', () => {
-  it('GETs /api/v1/vault-token/ and returns the token string', async () => {
+  it('GETs /transactions/v1/vault-token and returns the token string', async () => {
     const { http, spy } = mockHttpPort(() =>
       Promise.resolve({ token: 'vt_abc' }),
     );
@@ -16,7 +16,10 @@ describe('VaultService.fetchVaultToken', () => {
     expect(token).toBe('vt_abc');
     expect(spy).toHaveBeenCalledTimes(1);
     expect(spy).toHaveBeenCalledWith(
-      expect.objectContaining({ method: 'GET', path: '/api/v1/vault-token/' }),
+      expect.objectContaining({
+        method: 'GET',
+        path: '/transactions/v1/vault-token',
+      }),
     );
   });
 

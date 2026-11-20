@@ -14,7 +14,7 @@ function method(
   overrides: Partial<BackendPaymentMethod> & { payment_method: string },
 ): BackendPaymentMethod {
   return {
-    pk: UUID_7,
+    id: UUID_7,
     priority: 10,
     category: 'cash',
     ...overrides,
@@ -45,7 +45,7 @@ describe('toPublicPaymentMethods', () => {
 
   it('falls back to the code catalog for label and logo when the backend omits them', () => {
     const [projected] = toPublicPaymentMethods(
-      [method({ pk: UUID_3, payment_method: 'spei', category: 'transfer' })],
+      [method({ id: UUID_3, payment_method: 'spei', category: 'transfer' })],
       PRODUCTION_ASSETS,
     );
 
@@ -80,9 +80,9 @@ describe('toPublicPaymentMethods', () => {
     // cannot work. See isApplePayCatalogMethod for why the match is a prefix.
     const result = toPublicPaymentMethods(
       [
-        method({ pk: '41', payment_method: 'apple_pay_debit_card' }),
+        method({ id: '41', payment_method: 'apple_pay_debit_card' }),
         OXXO,
-        method({ pk: '42', payment_method: 'apple_pay_credit_card' }),
+        method({ id: '42', payment_method: 'apple_pay_credit_card' }),
       ],
       PRODUCTION_ASSETS,
     );

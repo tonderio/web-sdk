@@ -206,9 +206,16 @@ describe('public snake_case contract', () => {
 
   it('returns payment-method discovery objects with payment_method and no payment_method alias', async () => {
     const http: HttpPort = asHttpPort((_options: HttpRequestOptions) =>
-      Promise.resolve([
-        { pk: 7, payment_method: 'oxxopay', priority: 10, category: 'cash' },
-      ]),
+      Promise.resolve({
+        data: [
+          {
+            id: '7',
+            payment_method: 'oxxopay',
+            priority: 10,
+            category: 'cash',
+          },
+        ],
+      }),
     );
     const tonder = _createTonderWithDeps({
       config: { api_key: 'pk_test_123', environment: 'sandbox' },
@@ -218,7 +225,7 @@ describe('public snake_case contract', () => {
     const [method] = await tonder.getPaymentMethods();
 
     expect(method).toEqual({
-      id: 7,
+      id: '7',
       payment_method: 'oxxopay',
       label: 'Oxxo Pay',
       logo: `${resolveEnv('sandbox').assets}/payment_methods/oxxopay.png`,

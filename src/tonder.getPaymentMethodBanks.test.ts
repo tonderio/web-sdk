@@ -17,34 +17,29 @@ const CONFIG: TonderConfig = {
 
 function backendPaymentMethodBanks(): unknown {
   return {
-    cash: [
+    data: [
       {
-        id: 1,
-        bank: {
-          id: 11,
-          name: 'Banco Cash',
-          bank_code: 'BC',
-          country: 'MX',
-          country_name: 'Mexico',
-          is_active: true,
-        },
+        bank_id: 11,
+        code: 'BC',
+        name: 'Banco Cash',
         payment_type: 'cash',
-        is_enabled: true,
         priority: 5,
+        logo_url: null,
+        country_name: 'Mexico',
+        channels: ['WP'],
+        limits: null,
+        currency: 'MXN',
+        locations_url: null,
       },
     ],
-    transfer: [],
   };
 }
 
 describe('Tonder.getPaymentMethodBanks', () => {
-  it('reads apiKey from config, delegates to DirectApiService, returns { cash, transfer }', async () => {
+  it('delegates to DirectApiService on the transactions API, returns { cash, transfer }', async () => {
     const requestSpy = vi.fn(
       <T>(options: Parameters<HttpPort['request']>[0]) => {
-        if (
-          options.path ===
-          `/api/v1/safetypay/banks/${encodeURIComponent('pk_test_123')}/`
-        ) {
+        if (options.path === '/transactions/v1/safetypay/banks') {
           return Promise.resolve(backendPaymentMethodBanks() as unknown as T);
         }
         return Promise.reject(new Error('unexpected path'));
@@ -58,7 +53,7 @@ describe('Tonder.getPaymentMethodBanks', () => {
     expect(requestSpy).toHaveBeenCalledWith(
       expect.objectContaining({
         method: 'GET',
-        path: '/api/v1/safetypay/banks/pk_test_123/',
+        path: '/transactions/v1/safetypay/banks',
       }),
     );
     expect(result.cash).toHaveLength(1);

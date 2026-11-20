@@ -6,7 +6,8 @@ import { ErrorKeyEnum } from '../../shared/errors/ErrorKeyEnum';
  * Domain service for the Apple Pay merchant-validation round trip.
  *
  * PURE: depends only on the injected {@link HttpPort} — never on `fetch`/DOM.
- * The service is constructed by nothing but its own test until the change that
+ * The port must reach the transactions API, which validates the merchant for
+ * every business whatever its `core_payments_enabled` value. The service is constructed by nothing but its own test until the change that
  * gives it a caller; it is exported from no barrel and registered in no
  * service locator.
  *
@@ -51,7 +52,7 @@ export class ApplePayService {
     try {
       return await this.http.request<unknown>({
         method: 'POST',
-        path: '/api/v1/payments/apple-pay/validate-merchant/',
+        path: '/transactions/v1/apple-pay/validate-merchant',
         body: {},
       });
     } catch (error) {

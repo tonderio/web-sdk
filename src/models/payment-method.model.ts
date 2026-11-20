@@ -1,5 +1,5 @@
 /**
- * Wire shapes for `GET /api/v1/payment_methods?status=active`, plus the
+ * Wire shapes for `GET /transactions/v1/payment_methods?status=active`, plus the
  * projection into the merchant-facing shape.
  *
  * Shapes and their projection live together here, mirroring
@@ -18,7 +18,7 @@ import {
 /** SDK transport shape for one payment-method record. */
 export interface BackendPaymentMethod {
   /** The payment-method row's id: a UUID, not a number. */
-  pk: string;
+  id: string;
   payment_method: string;
   acquirer?: string;
   status?: string;
@@ -31,14 +31,6 @@ export interface BackendPaymentMethod {
   unavailable_countries?: string[];
 }
 
-/** SDK transport shape for a paginated payment-method response. */
-export interface BackendPaymentMethodsPage {
-  count?: number;
-  next?: string | null;
-  previous?: string | null;
-  results: BackendPaymentMethod[];
-}
-
 /** Pure snake→camel projection of one payment-method record. */
 function mapPaymentMethod(
   raw: BackendPaymentMethod,
@@ -49,7 +41,7 @@ function mapPaymentMethod(
     assetsBaseUrl,
   );
   return {
-    id: raw.pk,
+    id: raw.id,
     payment_method: raw.payment_method,
     label: raw.label ?? raw.name ?? catalog.label,
     logo: raw.logo ?? raw.icon ?? catalog.logo,

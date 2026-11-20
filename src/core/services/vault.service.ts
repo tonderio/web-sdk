@@ -10,7 +10,8 @@ interface VaultTokenResponse {
 /**
  * Domain service that mints the short-lived bearer token Skyflow uses to talk to
  * the vault. PURE: depends only on the injected {@link HttpPort} — never on
- * `fetch`/DOM. Failure mapping:
+ * `fetch`/DOM. The port must reach the transactions API, which serves the token
+ * for every business whatever its `core_payments_enabled` value. Failure mapping:
  *   - empty/malformed body → `AppError(INVALID_VAULT_TOKEN)`
  *   - transport failure    → `AppError(VAULT_TOKEN_ERROR)`
  *   - an existing `AppError` is re-thrown unchanged (no double-wrap).
@@ -27,7 +28,7 @@ export class VaultService {
     try {
       response = await this.http.request<VaultTokenResponse>({
         method: 'GET',
-        path: '/api/v1/vault-token/',
+        path: '/transactions/v1/vault-token',
       });
     } catch (error) {
       if (error instanceof AppError) throw error;

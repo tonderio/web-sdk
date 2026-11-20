@@ -211,12 +211,15 @@ export class Tonder {
     const coreHttp =
       http ?? new FetchHttpClient(this.#env.core, config.api_key);
     this.#businessService = new BusinessService(coreHttp);
-    this.#vaultService = new VaultService(this.#http);
+    // The vault token, the payment-method catalog, the SafetyPay banks and the
+    // Apple Pay merchant validation are the transactions API's for every
+    // business, whatever `core_payments_enabled` says.
+    this.#vaultService = new VaultService(coreHttp);
     this.#directApiService = new DirectApiService(this.#http);
     this.#coreApiService = new DirectApiService(coreHttp, CORE_API_ROUTES);
     this.#customerService = new CustomerService(this.#http);
     this.#cardService = new CardService(this.#http);
-    this.#applePayService = new ApplePayService(this.#http);
+    this.#applePayService = new ApplePayService(coreHttp);
     this.#services.register(BUSINESS_SERVICE_KEY, this.#businessService);
     this.#services.register(VAULT_SERVICE_KEY, this.#vaultService);
     this.#services.register(DIRECT_API_SERVICE_KEY, this.#directApiService);
@@ -1080,7 +1083,7 @@ export class Tonder {
   public async getPaymentMethods(): Promise<PaymentMethodInfo[]> {
     try {
       return toPublicPaymentMethods(
-        await this.#directApiService.getPaymentMethodCatalog(),
+        await this.#coreApiService.getPaymentMethodCatalog(),
         this.#env.assets,
       );
     } catch (error) {
@@ -1101,9 +1104,7 @@ export class Tonder {
    */
   public async getPaymentMethodBanks(): Promise<PaymentMethodBanks> {
     try {
-      return await this.#directApiService.getPaymentMethodBanks(
-        this.#core.getConfig().api_key,
-      );
+      return await this.#coreApiService.getPaymentMethodBanks();
     } catch (error) {
       if (error instanceof AppError) throw error;
       throw new AppError({
