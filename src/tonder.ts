@@ -217,8 +217,15 @@ export class Tonder {
     this.#vaultService = new VaultService(coreHttp);
     this.#directApiService = new DirectApiService(this.#http);
     this.#coreApiService = new DirectApiService(coreHttp, CORE_API_ROUTES);
-    this.#customerService = new CustomerService(this.#http);
-    this.#cardService = new CardService(this.#http);
+    // Customer and saved cards follow the business's own engine, as one: the
+    // customer token each engine issues is not valid on the other.
+    const supportOnCore = {
+      http: coreHttp,
+      enabled: () =>
+        this.#core.getState().business?.core_payments_enabled === true,
+    };
+    this.#customerService = new CustomerService(this.#http, supportOnCore);
+    this.#cardService = new CardService(this.#http, supportOnCore);
     this.#applePayService = new ApplePayService(coreHttp);
     this.#services.register(BUSINESS_SERVICE_KEY, this.#businessService);
     this.#services.register(VAULT_SERVICE_KEY, this.#vaultService);

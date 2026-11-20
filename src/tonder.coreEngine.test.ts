@@ -138,6 +138,31 @@ function mockHttp(routes: Routes = {}) {
         (() => Promise.resolve(tx({ id: 'tx_legacy_1' })))
       )(o);
     }
+    if (o.path === '/transactions/v1/customer') {
+      return Promise.resolve({
+        customer_id: 123,
+        email: 'ada@example.com',
+        first_name: 'Ada',
+        last_name: 'Lovelace',
+        auth_token: 'core_user_tok',
+        auth_token_expires_at: '2026-11-20T18:00:00Z',
+      });
+    }
+    if (o.method === 'GET' && o.path === '/transactions/v1/cards') {
+      return Promise.resolve({
+        customer_id: 123,
+        data: [
+          {
+            id: 'card_abc',
+            card_number: 'XXXX-XXXX-XXXX-1234',
+            expiration_month: '12',
+            expiration_year: '2030',
+            card_scheme: 'visa',
+            subscription_id: 'sub_abc',
+          },
+        ],
+      });
+    }
     if (o.path.startsWith('/transactions/v1/')) {
       const id = o.path.slice('/transactions/v1/'.length);
       return (routes.coreGet ?? (() => Promise.resolve(tx({ id }))))(id);
@@ -276,7 +301,7 @@ describe('Tonder engine — flag ON routes card payments to the core', () => {
   });
 
   it.each(['saved_card', 'SAVED_CARD', 'Saved_Card'])(
-    'a %s payment method goes to the core, and its lookups stay on the monolith',
+    'a %s payment method goes to the core, and so do its customer and card lookups',
     async (type) => {
       const { http, calls, paths } = mockHttp({
         config: {
@@ -297,7 +322,10 @@ describe('Tonder engine — flag ON routes card payments to the core', () => {
 
       expect(paths()).toContain(`POST ${CORE_PROCESS}`);
       expect(paths()).not.toContain(`POST ${LEGACY_PROCESS}`);
-      expect(paths()).toContain('GET /api/v1/business/7/cards/');
+      expect(paths()).toContain('POST /transactions/v1/customer');
+      expect(paths()).toContain('GET /transactions/v1/cards');
+      expect(paths()).not.toContain('GET /api/v1/business/7/cards/');
+      expect(paths()).not.toContain('POST /api/v1/customer/');
       const sent = calls.find((c) => c.path === CORE_PROCESS);
       expect(sent?.body).toMatchObject({
         payment_method: { type: 'CARD', token: 'card_abc' },
