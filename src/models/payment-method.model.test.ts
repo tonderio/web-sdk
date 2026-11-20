@@ -1,16 +1,20 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, expectTypeOf } from 'vitest';
 import { toPublicPaymentMethods } from './payment-method.model';
 import type { BackendPaymentMethod } from './payment-method.model';
 import { resolveEnv } from '../shared/config/env';
+import type { PaymentMethodInfo } from '../shared/types';
 
 const PRODUCTION_ASSETS = resolveEnv('production').assets;
 const SANDBOX_ASSETS = resolveEnv('sandbox').assets;
+// The backend's payment-method row id is a UUID.
+const UUID_7 = '0b0e3c1e-7d62-4f0a-9d53-6b8a1d0c7e07';
+const UUID_3 = '5f1d2b44-0a3e-4c8b-8f6e-2c9d7a1b3e03';
 
 function method(
   overrides: Partial<BackendPaymentMethod> & { payment_method: string },
 ): BackendPaymentMethod {
   return {
-    pk: 7,
+    pk: UUID_7,
     priority: 10,
     category: 'cash',
     ...overrides,
@@ -25,7 +29,7 @@ const OXXO = method({
 });
 
 const OXXO_PUBLIC = {
-  id: 7,
+  id: UUID_7,
   payment_method: 'oxxopay',
   label: 'Oxxo Pay',
   logo: `${PRODUCTION_ASSETS}/payment_methods/oxxopay.png`,
@@ -41,12 +45,12 @@ describe('toPublicPaymentMethods', () => {
 
   it('falls back to the code catalog for label and logo when the backend omits them', () => {
     const [projected] = toPublicPaymentMethods(
-      [method({ pk: 3, payment_method: 'spei', category: 'transfer' })],
+      [method({ pk: UUID_3, payment_method: 'spei', category: 'transfer' })],
       PRODUCTION_ASSETS,
     );
 
     expect(projected).toEqual({
-      id: 3,
+      id: UUID_3,
       payment_method: 'spei',
       label: 'SPEI',
       logo: `${PRODUCTION_ASSETS}/payment_methods/spei.png`,
@@ -76,9 +80,9 @@ describe('toPublicPaymentMethods', () => {
     // cannot work. See isApplePayCatalogMethod for why the match is a prefix.
     const result = toPublicPaymentMethods(
       [
-        method({ pk: 41, payment_method: 'apple_pay_debit_card' }),
+        method({ pk: '41', payment_method: 'apple_pay_debit_card' }),
         OXXO,
-        method({ pk: 42, payment_method: 'apple_pay_credit_card' }),
+        method({ pk: '42', payment_method: 'apple_pay_credit_card' }),
       ],
       PRODUCTION_ASSETS,
     );
@@ -97,5 +101,13 @@ describe('toPublicPaymentMethods', () => {
     expect(projected?.logo).toBe(
       `${SANDBOX_ASSETS}/payment_methods/oxxopay.png`,
     );
+  });
+});
+
+describe('PaymentMethodInfo.id', () => {
+  it('is typed as the string the API returns, and is passed through unchanged', () => {
+    expectTypeOf<PaymentMethodInfo['id']>().toEqualTypeOf<string>();
+    const [projected] = toPublicPaymentMethods([OXXO], PRODUCTION_ASSETS);
+    expect(projected?.id).toBe(UUID_7);
   });
 });

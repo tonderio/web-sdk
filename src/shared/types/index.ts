@@ -168,8 +168,8 @@ export type PaymentMethod =
  * A payment method enabled for your business, returned by `getPaymentMethods()`.
  */
 export interface PaymentMethodInfo {
-  /** Stable payment-method identifier. */
-  id: number;
+  /** Stable payment-method identifier: the UUID the API returns. */
+  id: string;
   /** Canonical method code, e.g. `'oxxopay'`, `'spei'`, `'card'`. */
   payment_method: string;
   /** Human-readable display label. Empty when no label is available. */

@@ -17,7 +17,8 @@ import {
 
 /** SDK transport shape for one payment-method record. */
 export interface BackendPaymentMethod {
-  pk: number;
+  /** The payment-method row's id: a UUID, not a number. */
+  pk: string;
   payment_method: string;
   acquirer?: string;
   status?: string;

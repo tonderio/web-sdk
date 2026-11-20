@@ -1613,7 +1613,7 @@ No arguments.
 
 ```ts
 interface PaymentMethodInfo {
-  id: number;
+  id: string;
   payment_method: string;
   label: string;
   logo: string;
