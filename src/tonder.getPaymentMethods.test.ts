@@ -18,7 +18,7 @@ const CONFIG: TonderConfig = {
 function backendPaymentMethods(): unknown {
   return [
     {
-      pk: 7,
+      id: '7',
       payment_method: 'oxxopay',
       acquirer: 'safetypay',
       status: 'active',
@@ -32,8 +32,8 @@ function backendPaymentMethods(): unknown {
 describe('Tonder.getPaymentMethods', () => {
   it('delegates to DirectApiService and returns the mapped array (no ready guard)', async () => {
     const http: HttpPort = asHttpPort((options: HttpRequestOptions) => {
-      if (options.path === '/api/v1/payment_methods?status=active') {
-        return Promise.resolve(backendPaymentMethods());
+      if (options.path === '/transactions/v1/payment_methods?status=active') {
+        return Promise.resolve({ data: backendPaymentMethods() });
       }
       return Promise.reject(new Error('unexpected path'));
     });
@@ -44,7 +44,7 @@ describe('Tonder.getPaymentMethods', () => {
 
     expect(result).toEqual([
       {
-        id: 7,
+        id: '7',
         payment_method: 'oxxopay',
         label: 'Oxxo Pay',
         logo: `${SANDBOX_ASSETS}/payment_methods/oxxopay.png`,
@@ -75,7 +75,7 @@ describe('Tonder.getPaymentMethods — Apple Pay entries are never returned', ()
   function businessConfig(): unknown {
     return {
       business: {
-        pk: 1,
+        id: '1',
         name: 'Acme',
         categories: [],
         web: 'https://acme.test',
@@ -101,22 +101,22 @@ describe('Tonder.getPaymentMethods — Apple Pay entries are never returned', ()
 
   function catalogWithApplePay(): unknown {
     return [
-      { pk: 1, payment_method: 'card', priority: 1, category: 'card' },
+      { id: '1', payment_method: 'card', priority: 1, category: 'card' },
       {
-        pk: 2,
+        id: '2',
         payment_method: 'apple_pay_debit_card',
         priority: 2,
         category: 'wallet',
       },
       {
-        pk: 3,
+        id: '3',
         payment_method: 'apple_pay_credit_card',
         priority: 3,
         category: 'wallet',
       },
-      { pk: 4, payment_method: 'spei', priority: 4, category: 'transfer' },
+      { id: '4', payment_method: 'spei', priority: 4, category: 'transfer' },
       {
-        pk: 7,
+        id: '7',
         payment_method: 'oxxopay',
         acquirer: 'safetypay',
         status: 'active',
@@ -129,8 +129,8 @@ describe('Tonder.getPaymentMethods — Apple Pay entries are never returned', ()
 
   function catalogHttp(catalog: unknown): HttpPort {
     return asHttpPort((options: HttpRequestOptions) => {
-      if (options.path === '/api/v1/payment_methods?status=active') {
-        return Promise.resolve(catalog);
+      if (options.path === '/transactions/v1/payment_methods?status=active') {
+        return Promise.resolve({ data: catalog });
       }
       return Promise.resolve(businessConfig());
     });
@@ -153,7 +153,7 @@ describe('Tonder.getPaymentMethods — Apple Pay entries are never returned', ()
     expect(codes).toEqual(['card', 'spei', 'oxxopay']);
     expect(JSON.stringify(result)).not.toContain('apple_pay');
     expect(result).toContainEqual({
-      id: 7,
+      id: '7',
       payment_method: 'oxxopay',
       label: 'Oxxo Pay',
       logo: `${SANDBOX_ASSETS}/payment_methods/oxxopay.png`,
@@ -169,7 +169,7 @@ describe('Tonder.getPaymentMethods — Apple Pay entries are never returned', ()
 
     await expect(tonder.getPaymentMethods()).resolves.toEqual([
       {
-        id: 7,
+        id: '7',
         payment_method: 'oxxopay',
         label: 'Oxxo Pay',
         logo: `${SANDBOX_ASSETS}/payment_methods/oxxopay.png`,
@@ -184,9 +184,9 @@ describe('Tonder.getPaymentMethods — Apple Pay entries are never returned', ()
     // path, and each public call contributes exactly one.
     let catalogCalls = 0;
     const http: HttpPort = asHttpPort((options: HttpRequestOptions) => {
-      if (options.path === '/api/v1/payment_methods?status=active') {
+      if (options.path === '/transactions/v1/payment_methods?status=active') {
         catalogCalls += 1;
-        return Promise.resolve(catalogWithApplePay());
+        return Promise.resolve({ data: catalogWithApplePay() });
       }
       return Promise.resolve(businessConfig());
     });

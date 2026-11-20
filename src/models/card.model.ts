@@ -48,6 +48,38 @@ export interface SaveCardBackendResponse {
   user_id: string;
   /** Card BIN (first digits), when available. */
   card_bin?: string;
+  /**
+   * `false` with `code: 'PHONE_REQUIRED'` when the business saves cards by phone
+   * and the customer has none: the monolith answers 200 with that body instead
+   * of failing, and the core path reproduces it.
+   */
+  saved?: boolean;
+  code?: string;
+}
+
+/** One card of the transactions API's saved-card list. */
+export interface CoreCard {
+  /** The card's vault record (`skyflow_id`). */
+  id: string;
+  card_number: string;
+  expiration_month: string;
+  expiration_year: string;
+  card_scheme: string;
+  subscription_id: string | null;
+}
+
+/** The transactions API's saved-card list. */
+export interface CoreCardsResponse {
+  customer_id: number | string;
+  data: CoreCard[];
+}
+
+/** The transactions API's answer to a saved card. */
+export interface CoreSavedCard {
+  id: string;
+  customer_id: number | string;
+  subscription_id?: string | null;
+  card_bin?: string;
 }
 
 /** Map a transport card entry to the public camelCase {@link Card}. */

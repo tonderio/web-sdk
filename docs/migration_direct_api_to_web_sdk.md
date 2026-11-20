@@ -8,6 +8,10 @@ For merchants already charging through Tonder Direct API server-to-server, who w
 
 If your business is enabled for the Tonder payments API, the SDK sends card payments to `POST /transactions/v1/process` and reads them from `GET /transactions/v1/{id}` instead; the body, the transaction you get back and the webhooks are the same. You do not configure this: the SDK reads it from your business settings when `init()` runs. `getTransaction(id)` asks the Tonder payments API first and, only if it does not know the id (`404`), reads the legacy route, so return pages keep working for payments created either way.
 
+In the same way, when your business is enabled for the Tonder payments API the SDK registers the customer and lists, saves and removes saved cards there instead of on the legacy routes. Keep minting the `secure_token` on the same endpoint as before; the request and the answer you get from the SDK do not change.
+
+The payment-method list, the SafetyPay bank list, the secure card-field token and the Apple Pay merchant validation always use the Tonder payments API, whether or not your business is enabled for it. The request and the answer the SDK gives you are the same.
+
 What changes is only this:
 
 | Today                                      | With the SDK                                                 |

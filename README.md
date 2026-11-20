@@ -668,6 +668,8 @@ Use the matching Tonder API host for your environment:
 | `stage`         | `https://stage.tonder.io/api/secure-token/` |
 | `production`    | `https://app.tonder.io/api/secure-token/`   |
 
+Nothing changes in this endpoint when your business is enabled for the Tonder payments API: you call the same URL with the same key and get the same `{ access }` answer. The SDK then sends the customer and the saved-card operations to the payments API with that token, so always pass it the token your backend just obtained from this endpoint, together with a current version of the SDK.
+
 Then pass the value returned by your backend to the SDK:
 
 ```ts
@@ -1613,7 +1615,7 @@ No arguments.
 
 ```ts
 interface PaymentMethodInfo {
-  id: number;
+  id: string;
   payment_method: string;
   label: string;
   logo: string;

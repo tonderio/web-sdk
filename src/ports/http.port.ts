@@ -14,3 +14,13 @@ export interface HttpRequestOptions {
 export interface HttpPort {
   request<T>(options: HttpRequestOptions): Promise<T>;
 }
+
+/**
+ * The transactions API as an alternative target of a service whose routes
+ * exist on both engines. `enabled` is read on every call, so the answer of the
+ * business configuration applies from the moment it is known.
+ */
+export interface CoreTarget {
+  http: HttpPort;
+  enabled: () => boolean;
+}

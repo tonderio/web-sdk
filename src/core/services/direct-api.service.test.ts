@@ -175,13 +175,13 @@ describe('DirectApiService.getPaymentMethodCatalog', () => {
   function rawCatalog(): unknown {
     return [
       {
-        pk: 7,
+        id: '7',
         payment_method: 'oxxopay',
         priority: 10,
         category: 'cash',
       },
       {
-        pk: 9,
+        id: '9',
         payment_method: 'apple_pay_debit_card',
         priority: 1,
         category: 'wallet',
@@ -189,8 +189,8 @@ describe('DirectApiService.getPaymentMethodCatalog', () => {
     ];
   }
 
-  it('GETs /api/v1/payment_methods?status=active and returns the RAW, unmapped, unfiltered array', async () => {
-    const spy = vi.fn().mockResolvedValue(rawCatalog());
+  it('GETs /transactions/v1/payment_methods?status=active and returns data[] RAW, unmapped, unfiltered', async () => {
+    const spy = vi.fn().mockResolvedValue({ data: rawCatalog() });
     const service = new DirectApiService({ request: spy });
 
     const result = await service.getPaymentMethodCatalog();
@@ -199,25 +199,28 @@ describe('DirectApiService.getPaymentMethodCatalog', () => {
     expect(spy).toHaveBeenCalledWith(
       expect.objectContaining({
         method: 'GET',
-        path: '/api/v1/payment_methods?status=active',
+        path: '/transactions/v1/payment_methods?status=active',
       }),
     );
     expect(result).toEqual(rawCatalog());
   });
 
-  it('flattens a paginated envelope into the raw array', async () => {
+  it('reads the core list as it is, without pagination fields', async () => {
     const service = new DirectApiService({
-      request: vi.fn().mockResolvedValue({
-        count: 2,
-        next: null,
-        previous: null,
-        results: rawCatalog(),
-      }),
+      request: vi.fn().mockResolvedValue({ data: [] }),
     });
 
-    await expect(service.getPaymentMethodCatalog()).resolves.toEqual(
-      rawCatalog(),
-    );
+    await expect(service.getPaymentMethodCatalog()).resolves.toEqual([]);
+  });
+
+  it('refuses an answer that is not the core list', async () => {
+    const service = new DirectApiService({
+      request: vi.fn().mockResolvedValue('<html>'),
+    });
+
+    await expect(service.getPaymentMethodCatalog()).rejects.toMatchObject({
+      code: ErrorKeyEnum.FETCH_PAYMENT_METHODS_ERROR,
+    });
   });
 
   it('re-wraps a transport failure as AppError(FETCH_PAYMENT_METHODS_ERROR)', async () => {
@@ -233,57 +236,63 @@ describe('DirectApiService.getPaymentMethodCatalog', () => {
 });
 
 describe('DirectApiService.getPaymentMethodBanks', () => {
-  const API_KEY = 'pk test/123';
-
   function backendPaymentMethodBanks(): unknown {
     return {
-      cash: [
+      data: [
         {
-          id: 1,
-          bank: {
-            id: 11,
-            name: 'Banco Cash',
-            bank_code: 'BC',
-            logo: 'https://logo/cash.png',
-            country: 'MX',
-            country_name: 'Mexico',
-            is_active: true,
-          },
+          bank_id: 11,
+          code: 'BC',
+          name: 'Banco Cash',
           payment_type: 'cash',
-          is_enabled: true,
           priority: 5,
+          logo_url: 'https://logo/cash.png',
+          country_name: 'Mexico',
+          channels: ['WP'],
+          limits: { min: '1.00', max: '100.00' },
+          currency: 'MXN',
+          locations_url: null,
         },
-      ],
-      transfer: [
         {
-          id: 2,
-          bank: {
-            id: 22,
-            name: 'Banco Transfer',
-            bank_code: 'BT',
-            country: 'MX',
-            country_name: 'Mexico',
-            is_active: false,
-          },
+          bank_id: 22,
+          code: 'BT',
+          name: 'Banco Transfer',
           payment_type: 'transfer',
-          is_enabled: false,
           priority: 6,
+          logo_url: null,
+          country_name: 'Mexico',
+          channels: ['OL'],
+          limits: null,
+          currency: 'MXN',
+          locations_url: null,
+        },
+        {
+          bank_id: 33,
+          code: 'BX',
+          name: 'Banco Other',
+          payment_type: 'other',
+          priority: 7,
+          logo_url: null,
+          country_name: 'Mexico',
+          channels: [],
+          limits: null,
+          currency: 'MXN',
+          locations_url: null,
         },
       ],
     };
   }
 
-  it('GETs /api/v1/safetypay/banks/{apiKey}/ with the apiKey URI-encoded in the path and maps groups', async () => {
+  it('GETs /transactions/v1/safetypay/banks with no key in the path and maps groups', async () => {
     const spy = vi.fn().mockResolvedValue(backendPaymentMethodBanks());
     const service = new DirectApiService({ request: spy });
 
-    const result = await service.getPaymentMethodBanks(API_KEY);
+    const result = await service.getPaymentMethodBanks();
 
     expect(spy).toHaveBeenCalledTimes(1);
     expect(spy).toHaveBeenCalledWith(
       expect.objectContaining({
         method: 'GET',
-        path: `/api/v1/safetypay/banks/${encodeURIComponent(API_KEY)}/`,
+        path: '/transactions/v1/safetypay/banks',
       }),
     );
     expect(result.cash).toEqual([
@@ -308,12 +317,29 @@ describe('DirectApiService.getPaymentMethodBanks', () => {
     expect('logo' in result.transfer[0]).toBe(false);
   });
 
+  it('answers empty groups for an empty list and refuses a body that is not the core list', async () => {
+    const empty = new DirectApiService({
+      request: vi.fn().mockResolvedValue({ data: [] }),
+    });
+    await expect(empty.getPaymentMethodBanks()).resolves.toEqual({
+      cash: [],
+      transfer: [],
+    });
+
+    const bad = new DirectApiService({
+      request: vi.fn().mockResolvedValue({ cash: [] }),
+    });
+    await expect(bad.getPaymentMethodBanks()).rejects.toMatchObject({
+      code: ErrorKeyEnum.FETCH_PAYMENT_METHOD_BANKS_ERROR,
+    });
+  });
+
   it('re-wraps a transport failure as AppError(FETCH_PAYMENT_METHOD_BANKS_ERROR)', async () => {
     const service = new DirectApiService(
       asHttpPort(() => Promise.reject(new Error('boom'))),
     );
 
-    const err = await service.getPaymentMethodBanks(API_KEY).catch((e) => e);
+    const err = await service.getPaymentMethodBanks().catch((e) => e);
 
     expect(err).toBeInstanceOf(AppError);
     expect(err.code).toBe(ErrorKeyEnum.FETCH_PAYMENT_METHOD_BANKS_ERROR);

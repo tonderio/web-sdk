@@ -5,56 +5,54 @@ import type {
 import type { ApmPaymentMethod } from '../strategies/apm.strategy';
 import type { ApplePayPaymentMethod } from '../strategies/apple-pay.strategy';
 import type { BackendTransactionResponse } from '../../models/transaction.model';
-import type {
-  BackendPaymentMethod,
-  BackendPaymentMethodsPage,
-} from '../../models/payment-method.model';
+import type { BackendPaymentMethod } from '../../models/payment-method.model';
 import type { HttpPort } from '../../ports/http.port';
 import { AppError } from '../../shared/errors/AppError';
 import { ErrorKeyEnum } from '../../shared/errors/ErrorKeyEnum';
 import type { BillingAddress, PaymentMethodBank } from '../../shared/types';
 
 /**
- * Raw snake_case body of one bank option in the payment-method banks response.
- * Not part of the SDK's public API — the merchant-facing shape is the mapped
- * projection.
+ * One bank of the transactions API's SafetyPay list. Not part of the SDK's
+ * public API — the merchant-facing shape is the mapped projection.
  */
-interface BackendPaymentMethodBank {
-  id: number;
-  bank: {
-    id: number;
-    name: string;
-    bank_code: string;
-    logo?: string;
-    country: string;
-    country_name: string;
-    is_active: boolean;
-  };
+interface CoreBank {
+  /** The bank record's numeric id (a declared deviation of the core). */
+  bank_id: number;
+  code: string;
+  name: string;
   payment_type: string;
-  is_enabled: boolean;
-  priority: number;
+  country_name: string;
+  logo_url?: string | null;
 }
 
-/** SDK transport shape for SafetyPay bank groups. */
-interface BackendPaymentMethodBanksResponse {
-  cash?: BackendPaymentMethodBank[];
-  transfer?: BackendPaymentMethodBank[];
-}
-
-/** Pure snake→camel projection of one payment method bank option (promotes `bank.*`). */
+/** Pure projection of one bank option onto the public {@link PaymentMethodBank}. */
 function mapPaymentMethodBank(
-  raw: BackendPaymentMethodBank,
+  raw: CoreBank,
   group: 'cash' | 'transfer',
 ): PaymentMethodBank {
   const bank: PaymentMethodBank = {
-    id: raw.bank.id,
-    name: raw.bank.name,
-    code: raw.bank.bank_code,
-    country: raw.bank.country_name,
+    id: raw.bank_id,
+    name: raw.name,
+    code: raw.code,
+    country: raw.country_name,
     channel: group === 'transfer' ? 'OL' : 'WP',
   };
-  if (raw.bank.logo !== undefined) bank.logo = raw.bank.logo;
+  if (typeof raw.logo_url === 'string' && raw.logo_url !== '') {
+    bank.logo = raw.logo_url;
+  }
   return bank;
+}
+
+/**
+ * The `data` array of a transactions API list answer. A 2xx body that is not
+ * one (a proxy's HTML page, an empty body) is a failure, not an empty list.
+ */
+function listOf<T>(raw: unknown): T[] {
+  const data = (raw as { data?: unknown } | null)?.data;
+  if (!Array.isArray(data)) {
+    throw new Error('The answer is not a transactions API list.');
+  }
+  return data as T[];
 }
 
 /** Payment request body used by the SDK runtime. */
@@ -207,7 +205,10 @@ export class DirectApiService {
 
   /**
    * Fetch the RAW active payment-method catalog via
-   * `GET /api/v1/payment_methods?status=active`.
+   * `GET /transactions/v1/payment_methods?status=active`.
+   *
+   * Always the transactions API's route, for every business: build the service
+   * with a port that reaches it.
    *
    * Unmapped and UNFILTERED — the result still contains the `apple_pay_*`
    * entries. Not public API, and never cached: this is the transport behind
@@ -215,21 +216,19 @@ export class DirectApiService {
    * result to a merchant; only the public projection produces a merchant-facing
    * shape.
    *
-   * The paginated envelope is flattened here so no reader has to repeat the
-   * `Array.isArray` normalization; the pagination fields are transport metadata
-   * the SDK ignores. Any transport failure is re-wrapped as
+   * The transactions API answers `{ data: [...] }`, never paged; the array is
+   * unwrapped here so no reader repeats it. Any transport failure is re-wrapped as
    * `AppError(FETCH_PAYMENT_METHODS_ERROR)` — the same code the public call
    * uses, produced in exactly one place.
    */
   public async getPaymentMethodCatalog(): Promise<BackendPaymentMethod[]> {
     try {
-      const raw = await this.http.request<
-        BackendPaymentMethod[] | BackendPaymentMethodsPage
-      >({
-        method: 'GET',
-        path: '/api/v1/payment_methods?status=active',
-      });
-      return Array.isArray(raw) ? raw : raw.results;
+      return listOf<BackendPaymentMethod>(
+        await this.http.request<unknown>({
+          method: 'GET',
+          path: '/transactions/v1/payment_methods?status=active',
+        }),
+      );
     } catch (error) {
       throw new AppError({
         errorCode: ErrorKeyEnum.FETCH_PAYMENT_METHODS_ERROR,
@@ -239,30 +238,34 @@ export class DirectApiService {
   }
 
   /**
-   * Fetch the payment method bank list via `GET /api/v1/safetypay/banks/{apiKey}/`.
+   * Fetch the payment method bank list via `GET /transactions/v1/safetypay/banks`.
    *
-   * The `apiKey` travels in the URL PATH (URI-encoded), not the auth header —
-   * the SafetyPay view resolves the business from the path token. The transport
-   * still attaches its `Token` auth header; that header is ignored by this view.
+   * The business is the credential's own: the key travels in the auth header the
+   * transport attaches, never in the path. Always the transactions API's route,
+   * for every business: build the service with a port that reaches it.
    * PURE: depends only on the injected {@link HttpPort}. Returns the two channel
    * groups mapped to {@link PaymentMethodBank}. Any transport failure is re-wrapped as
    * `AppError(FETCH_PAYMENT_METHOD_BANKS_ERROR)`.
    */
-  public async getPaymentMethodBanks(
-    apiKey: string,
-  ): Promise<{ cash: PaymentMethodBank[]; transfer: PaymentMethodBank[] }> {
+  public async getPaymentMethodBanks(): Promise<{
+    cash: PaymentMethodBank[];
+    transfer: PaymentMethodBank[];
+  }> {
     try {
-      const raw = await this.http.request<BackendPaymentMethodBanksResponse>({
-        method: 'GET',
-        path: `/api/v1/safetypay/banks/${encodeURIComponent(apiKey)}/`,
-      });
+      const banks = listOf<CoreBank>(
+        await this.http.request<unknown>({
+          method: 'GET',
+          path: '/transactions/v1/safetypay/banks',
+        }),
+      );
+      // One list for both payment types: the type names the group.
       return {
-        cash: (raw.cash ?? []).map((bank) =>
-          mapPaymentMethodBank(bank, 'cash'),
-        ),
-        transfer: (raw.transfer ?? []).map((bank) =>
-          mapPaymentMethodBank(bank, 'transfer'),
-        ),
+        cash: banks
+          .filter((bank) => bank.payment_type === 'cash')
+          .map((bank) => mapPaymentMethodBank(bank, 'cash')),
+        transfer: banks
+          .filter((bank) => bank.payment_type === 'transfer')
+          .map((bank) => mapPaymentMethodBank(bank, 'transfer')),
       };
     } catch (error) {
       throw new AppError({
