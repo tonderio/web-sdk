@@ -23,6 +23,7 @@ Browser TypeScript SDK for accepting payments with Tonder. It provides secure ca
   - [Card on File (COF)](#card-on-file-cof)
   - [Presentation mode](#presentation-mode)
   - [Component lifecycle](#component-lifecycle)
+  - [Usage telemetry](#usage-telemetry)
 - [Backend secure token endpoint](#backend-secure-token-endpoint)
 - [Payment flows](#payment-flows)
   - [New card](#new-card)
@@ -625,6 +626,10 @@ useEffect(() => {
 ```
 
 The `cancelled` flag is not optional decoration. `init()` and `mount()` are async, so a shopper who leaves quickly can make them resolve after your component is already gone — without the flag you would mount into a container that no longer exists.
+
+### Usage telemetry
+
+The SDK reports how it is used to Tonder (`<Tonder API>/telemetry`), with the same `Authorization` it sends on its other calls. It sends only closed values: the name of each public method you call, and for a payment its steps (start, customer, charge, result) with the outcome, the duration, the HTTP status, the SDK error code, the payment method type (for example `CARD`) and the `X-Request-Id` of the charge. It never sends card, shopper or 3DS data, amounts, references or messages, and it never throws into your page or changes a payment. Events are batched and sampled per session. A `request_id` that does not look like an identifier (8 to 64 letters, digits, `_` or `-`, for example a very long `idempotency_key`) is left out of the telemetry event; the payment's `X-Request-Id` is not changed.
 
 ## Backend secure token endpoint
 

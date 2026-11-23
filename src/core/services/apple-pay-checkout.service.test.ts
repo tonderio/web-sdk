@@ -22,6 +22,7 @@ import type {
   ApplePayCheckoutDeps,
 } from './apple-pay-checkout.service';
 import { ApplePayService } from './apple-pay.service';
+import { NoopTelemetry } from '../../adapters/telemetry/client-telemetry.adapter';
 import { DirectApiService } from './direct-api.service';
 import * as processBody from '../strategies/process-body.strategy';
 import type {
@@ -174,6 +175,7 @@ function harness(
     applePay: port,
     validation: new ApplePayService(validateHttp),
     payments: new DirectApiService(processHttp),
+    telemetry: new NoopTelemetry(),
     getContext: () => context(options.ctx),
     emit,
   };
@@ -268,6 +270,7 @@ describe('ApplePayCheckoutService.start — click-path synchrony (T1, T2)', () =
       applePay: port,
       validation: new ApplePayService(asHttpPort(() => Promise.resolve({}))),
       payments: new DirectApiService(processHttp),
+      telemetry: new NoopTelemetry(),
       getContext: () => context(),
       emit: fakeSink(),
     });
@@ -559,6 +562,7 @@ describe('The Apple Pay /process body comes from the shared builder (D3, T13)', 
       applePay: port,
       validation: new ApplePayService(asHttpPort(() => Promise.resolve({}))),
       payments: new DirectApiService(processHttp),
+      telemetry: new NoopTelemetry(),
       getContext: () => context(),
       emit: fakeSink(),
     });
@@ -600,6 +604,7 @@ describe('The Apple Pay /process body comes from the shared builder (D3, T13)', 
       applePay: port,
       validation: new ApplePayService(asHttpPort(() => Promise.resolve({}))),
       payments: new DirectApiService(processHttp),
+      telemetry: new NoopTelemetry(),
       getContext: () => context(),
       emit: fakeSink(),
     });
@@ -624,6 +629,7 @@ describe('The Apple Pay /process body comes from the shared builder (D3, T13)', 
       applePay: port,
       validation: new ApplePayService(asHttpPort(() => Promise.resolve({}))),
       payments: new DirectApiService(processHttp),
+      telemetry: new NoopTelemetry(),
       getContext: () => ctx,
       emit: fakeSink(),
     });

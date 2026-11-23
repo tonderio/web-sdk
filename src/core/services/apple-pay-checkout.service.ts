@@ -25,6 +25,8 @@ import {
   toRawTransaction,
 } from '../../models/transaction.model';
 import type { ApplePayConfig } from '../../models/business.model';
+import type { TelemetryPort } from '../../ports/telemetry.port';
+import { elapsedSince, failureFields } from '../telemetry/flow';
 import type {
   ApplePayPaymentToken,
   ApplePayPort,
@@ -53,6 +55,8 @@ export interface ApplePayCheckoutDeps {
    * chosen by the owner of this dep at call time, never captured here.
    */
   payments: Pick<DirectApiService, 'processPayment'>;
+  /** Reports the steps of the payment: start, charge and result. */
+  telemetry: TelemetryPort;
   /** Live reads at click/fire time. Never snapshotted. */
   getContext(): ApplePayCheckoutContext;
   /**
@@ -71,6 +75,15 @@ export interface ApplePayCheckoutStartInput {
   /** Narrowed by the `mount()` gate. */
   merchantName: string;
 }
+
+/** Where one Apple Pay payment is, for the telemetry of its steps. */
+interface ApplePayFlow {
+  step: string;
+  stepStartedAt: number;
+  requestId?: string;
+}
+
+const APPLE_PAY_TYPE = 'APPLE_PAY';
 
 export class ApplePayCheckoutService {
   private readonly deps: ApplePayCheckoutDeps;
@@ -93,6 +106,7 @@ export class ApplePayCheckoutService {
    * the only report channel is `events.payment.on_error`.
    */
   public start(input: ApplePayCheckoutStartInput): void {
+    const flow: ApplePayFlow = { step: 'start', stepStartedAt: Date.now() };
     try {
       const ctx = this.deps.getContext();
       // Copied, not aliased: this is read again at `onPaymentAuthorized`, and
@@ -112,13 +126,18 @@ export class ApplePayCheckoutService {
       });
 
       this.session = this.deps.applePay.createSession(request, {
-        onValidateMerchant: () => this.onValidateMerchant(),
+        onValidateMerchant: () => this.onValidateMerchant(flow),
         onPaymentAuthorized: (token) =>
-          this.onPaymentAuthorized(token, payment, currency),
+          this.onPaymentAuthorized(token, payment, currency, flow),
         onCancel: () => this.onCancel(),
       });
       this.session.begin();
     } catch (error) {
+      this.deps.telemetry.flowFailed('start', {
+        ...failureFields(error),
+        duration_ms: elapsedSince(flow.stepStartedAt),
+        payment_method_type: APPLE_PAY_TYPE,
+      });
       this.emitError(error);
     }
   }
@@ -137,14 +156,20 @@ export class ApplePayCheckoutService {
     session.abort();
   }
 
-  private async onValidateMerchant(): Promise<void> {
+  private async onValidateMerchant(flow: ApplePayFlow): Promise<void> {
     const session = this.session;
     if (!session) return;
     try {
       session.completeMerchantValidation(
         await this.deps.validation.validateMerchant(),
       );
+      this.advance(flow, 'charge');
     } catch (error) {
+      this.deps.telemetry.flowFailed('start', {
+        ...failureFields(error),
+        duration_ms: elapsedSince(flow.stepStartedAt),
+        payment_method_type: APPLE_PAY_TYPE,
+      });
       session.abort();
       this.session = null;
       // Re-emitted AS-IS: `ApplePayService` already wraps transport failures as
@@ -158,6 +183,7 @@ export class ApplePayCheckoutService {
     token: ApplePayPaymentToken,
     payment: ApplePayPaymentInput,
     currency: string,
+    flow: ApplePayFlow,
   ): Promise<void> {
     // Captured into a local BEFORE ownership is released, so the sheet can
     // still be settled on every path — including the throw path below.
@@ -167,6 +193,11 @@ export class ApplePayCheckoutService {
 
     try {
       const ctx = this.deps.getContext();
+      const requestId = resolveRequestId(
+        payment.idempotency_key,
+        ctx.businessPk,
+      );
+      flow.requestId = requestId;
       const raw = await this.deps.payments.processPayment(
         buildProcessBody({
           payment,
@@ -177,8 +208,9 @@ export class ApplePayCheckoutService {
           currency,
           presentationMode: ctx.presentationMode,
         }),
-        resolveRequestId(payment.idempotency_key, ctx.businessPk),
+        requestId,
       );
+      this.advance(flow, 'result');
 
       const tx = toRawTransaction(raw);
       // ONE rule decides the channel: a transaction goes to `on_completed`, and
@@ -192,11 +224,37 @@ export class ApplePayCheckoutService {
         status: isSuccessfulStatus(tx.status) ? 'success' : 'failure',
       });
       this.deps.emit.onCompleted(tx);
+      this.deps.telemetry.flowStep('result', {
+        ...this.fields(flow),
+        outcome: isSuccessfulStatus(tx.status) ? 'ok' : 'error',
+      });
     } catch (error) {
       // ALWAYS first: the merchant's callback commonly navigates.
       session.completePayment({ status: 'failure' });
+      this.deps.telemetry.flowFailed(flow.step, {
+        ...this.fields(flow),
+        ...failureFields(error),
+      });
       this.emitError(error);
     }
+  }
+
+  /** Close the current step as done and open `next`. */
+  private advance(flow: ApplePayFlow, next: string): void {
+    this.deps.telemetry.flowStep(flow.step, {
+      ...this.fields(flow),
+      outcome: 'ok',
+    });
+    flow.step = next;
+    flow.stepStartedAt = Date.now();
+  }
+
+  private fields(flow: ApplePayFlow) {
+    return {
+      duration_ms: elapsedSince(flow.stepStartedAt),
+      payment_method_type: APPLE_PAY_TYPE,
+      ...(flow.requestId ? { request_id: flow.requestId } : {}),
+    };
   }
 
   private onCancel(): void {
