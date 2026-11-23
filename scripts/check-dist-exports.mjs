@@ -56,6 +56,11 @@ export const INTERNAL_SEAMS = [
       'Card-on-File provider injection seam. Everything under it (the Cof* payloads) is provider protocol, never merchant input.',
   },
   {
+    name: 'TelemetryPort',
+    reason:
+      'Telemetry injection seam. The SDK reports through its own client; a merchant-supplied one would let the page read or change what the SDK reports.',
+  },
+  {
     name: 'CheckoutMessengerPort',
     reason:
       'Hosted-page completion injection seam. Merchants read the payment status through the normal flow instead.',

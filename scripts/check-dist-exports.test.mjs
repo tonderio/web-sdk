@@ -190,6 +190,7 @@ describe('INTERNAL_SEAMS', () => {
       'AcquirerPort',
       'CheckoutMessengerPort',
       'HttpPort',
+      'TelemetryPort',
       'ThreeDsHostPort',
       'TokenizerPort',
     ]);

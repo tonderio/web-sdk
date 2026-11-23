@@ -38,6 +38,16 @@ import type {
   RawTransaction,
 } from './models/transaction.model';
 import { Browser3dsHost } from './adapters/browser/browser-3ds-host.adapter';
+import {
+  ClientTelemetryAdapter,
+  NoopTelemetry,
+} from './adapters/telemetry/client-telemetry.adapter';
+import type { TelemetryFields, TelemetryPort } from './ports/telemetry.port';
+import {
+  elapsedSince,
+  failureFields,
+  paymentMethodTypeOf,
+} from './core/telemetry/flow';
 import { BrowserApplePay } from './adapters/browser/apple-pay.adapter';
 import { ApplePayService } from './core/services/apple-pay.service';
 import { ApplePayCheckoutService } from './core/services/apple-pay-checkout.service';
@@ -155,6 +165,14 @@ function assertValidConfig(config: TonderConfig): void {
  * customer-dependent methods such as {@link pay}, {@link enrollCard},
  * {@link getCustomerCards}, and {@link removeCustomerCard} require it.
  */
+/** Where a `pay()` is, for the telemetry of its steps. */
+interface PayFlow {
+  step: string;
+  stepStartedAt: number;
+  paymentMethodType: string | undefined;
+  requestId?: string;
+}
+
 export class Tonder {
   readonly #core: TonderCore;
   readonly #services: ServiceManager;
@@ -165,6 +183,8 @@ export class Tonder {
   readonly #directApiService: DirectApiService;
   readonly #coreApiService: DirectApiService;
   readonly #enginePin: EnginePinPort = new SessionEnginePin();
+  readonly #telemetry: TelemetryPort;
+  readonly #reportedFailures = new WeakSet<object>();
   readonly #customerService: CustomerService;
   readonly #cardService: CardService;
   readonly #tokenizer: TokenizerPort;
@@ -191,6 +211,7 @@ export class Tonder {
     // 'ApplePayJS'`. The fully-typed injection seam is
     // `_createTonderWithDeps({ applePay })` below, which never ships.
     applePay?: unknown,
+    telemetry?: TelemetryPort,
   ) {
     assertValidConfig(config);
     // Supplied from here rather than the core, so `core/` stays free of browser
@@ -203,6 +224,13 @@ export class Tonder {
     });
     this.#services = new ServiceManager();
     this.#env = resolveEnv(config.environment);
+    this.#telemetry =
+      telemetry ??
+      new ClientTelemetryAdapter({
+        env: config.environment,
+        endpoint: `${this.#env.api}/telemetry`,
+        apiKey: config.api_key,
+      });
     this.#http = http ?? new FetchHttpClient(this.#env.api, config.api_key);
     // One injected transport serves both APIs (the paths tell them apart), so
     // a test seam needs a single fake.
@@ -308,6 +336,7 @@ export class Tonder {
    * would gate nothing while hiding the button from an enabled business.
    */
   public isApplePayAvailable(): ApplePayAvailability {
+    this.#telemetry.methodCalled('isApplePayAvailable');
     const state = this.#core.getState();
     if (state.lifecycle !== 'ready') {
       return unavailableApplePay(ErrorKeyEnum.NOT_INITIALIZED);
@@ -333,6 +362,7 @@ export class Tonder {
     type: T,
     options?: ComponentOptionsByType[T],
   ): ComponentByType[T] {
+    this.#telemetry.methodCalled('create');
     if (type === 'card_fields') {
       // TypeScript cannot narrow a generic return type from a value-level
       // `type === ...` check, so the dispatch branch carries the cast.
@@ -375,6 +405,7 @@ export class Tonder {
     const checkout = new ApplePayCheckoutService({
       applePay: this.#applePay,
       validation: this.#applePayService,
+      telemetry: this.#telemetry,
       payments: {
         processPayment: (body, requestId) =>
           this.processOnEngine(this.applePayEngine(), body, requestId),
@@ -397,6 +428,7 @@ export class Tonder {
       // `async` only because `TonderMountableComponent.mount()` says so. It
       // awaits nothing, and it is not part of the click path.
       mount: async (): Promise<void> => {
+        this.#telemetry.methodCalled('apple_pay_button.mount');
         this.assertReady();
         if (!this.#applePay.canUseApplePay()) {
           throw new AppError({
@@ -434,6 +466,7 @@ export class Tonder {
         });
       },
       unmount: (): void => {
+        this.#telemetry.methodCalled('apple_pay_button.unmount');
         // Abort FIRST: the sheet must be dismissed before its container
         // disappears. Both calls are idempotent.
         checkout.abort();
@@ -459,15 +492,18 @@ export class Tonder {
       : 'create';
     return {
       mount: async (): Promise<void> => {
+        this.#telemetry.methodCalled('card_fields.mount');
         this.assertReady();
         await this.#tokenizer.mount(normalizedOptions);
         this.#mountedCardFields.set(contextKey, normalizedOptions);
       },
       unmount: (): void => {
+        this.#telemetry.methodCalled('card_fields.unmount');
         this.#tokenizer.unmount(contextKey);
         this.#mountedCardFields.delete(contextKey);
       },
       reveal: async (request: RevealCardFieldsInput): Promise<void> => {
+        this.#telemetry.methodCalled('card_fields.reveal');
         this.assertReady();
         await this.#tokenizer.reveal(request);
       },
@@ -560,6 +596,7 @@ export class Tonder {
    * `error` rather than reaching `ready` with nothing configured.
    */
   public async init(): Promise<void> {
+    this.#telemetry.methodCalled('init');
     if (this.#core.getState().lifecycle === 'ready') {
       return;
     }
@@ -599,13 +636,29 @@ export class Tonder {
    * without being saved, and `console.warn` reports why.
    */
   public async pay(input: PayInput): Promise<RawTransaction> {
+    this.#telemetry.methodCalled('pay');
+    const flow: PayFlow = {
+      step: 'start',
+      stepStartedAt: Date.now(),
+      paymentMethodType: paymentMethodTypeOf(input?.payment_method?.type),
+    };
     try {
-      const tx = await this.runPay(input);
+      const tx = await this.runPay(input, flow);
       // Cannot throw (see `emitPayment`), so a successful payment can never
       // fall into the catch below and report itself as a failure.
       this.#paymentEvents.onCompleted(tx);
+      this.#telemetry.flowStep('result', {
+        ...this.flowFields(flow),
+        outcome: isSuccessfulStatus(tx.status) ? 'ok' : 'error',
+      });
       return tx;
     } catch (error) {
+      if (!this.#reportedFailures.has(error as object)) {
+        this.#telemetry.flowFailed(flow.step, {
+          ...this.flowFields(flow),
+          ...failureFields(error),
+        });
+      }
       // Only `AppError` produces `on_error`: `PaymentEvents.on_error(error:
       // AppError)` is a published contract. A non-AppError still rejects the
       // promise, it is just not duplicated onto the callback.
@@ -620,7 +673,10 @@ export class Tonder {
    * The payment itself. `pay()` is the thin wrapper that adds one emit per
    * outcome, instead of threading emits through this method's four returns.
    */
-  private async runPay(input: PayInput): Promise<RawTransaction> {
+  private async runPay(
+    input: PayInput,
+    flow: PayFlow,
+  ): Promise<RawTransaction> {
     if (this.#core.getState().lifecycle !== 'ready') {
       throw new AppError({ errorCode: ErrorKeyEnum.NOT_INITIALIZED });
     }
@@ -652,6 +708,7 @@ export class Tonder {
     const inputType = input.payment_method.type;
 
     const resolved = await this.resolvePaymentMethod(input);
+    this.advanceFlow(flow, 'charge');
     const config = this.#core.getConfig();
     const body = buildProcessBody({
       payment: input,
@@ -668,6 +725,7 @@ export class Tonder {
         input.idempotency_key,
         this.#core.getState().business?.business.pk,
       );
+      flow.requestId = requestId;
       raw = await this.processOnEngine(engine, body, requestId);
     } catch (error) {
       await this.rollbackAutoEnrolledCard(resolved);
@@ -680,6 +738,7 @@ export class Tonder {
       });
     }
 
+    this.advanceFlow(flow, 'result');
     const tx = toRawTransaction(raw);
 
     if (
@@ -698,6 +757,26 @@ export class Tonder {
 
     await this.resetCardFieldsAfterSuccessfulPayment(inputType, input, finalTx);
     return finalTx;
+  }
+
+  /** Close the current step of a payment as done and open `next`. */
+  private advanceFlow(flow: PayFlow, next: string): void {
+    this.#telemetry.flowStep(flow.step, {
+      ...this.flowFields(flow),
+      outcome: 'ok',
+    });
+    flow.step = next;
+    flow.stepStartedAt = Date.now();
+  }
+
+  private flowFields(flow: PayFlow): TelemetryFields {
+    return {
+      duration_ms: elapsedSince(flow.stepStartedAt),
+      ...(flow.paymentMethodType
+        ? { payment_method_type: flow.paymentMethodType }
+        : {}),
+      ...(flow.requestId ? { request_id: flow.requestId } : {}),
+    };
   }
 
   /**
@@ -921,7 +1000,7 @@ export class Tonder {
     const method = input.payment_method;
 
     if (Tonder.isMethodType(method.type, 'card')) {
-      if (this.isCofActive() && !this.canSaveCards()) {
+      if (this.isCofActive() && !this.cardsCanBeSaved()) {
         // Charged as a regular card: enrolling would be refused by the backend
         // and take the payment down with it. Warn instead of failing silently.
         console.warn(
@@ -929,7 +1008,7 @@ export class Tonder {
             'and `session.customer.phone` is missing. The payment continues as a regular card payment.',
         );
       } else if (this.isCofActive()) {
-        const params = await this.buildCofEnrollParams(input.currency);
+        const params = await this.buildCofEnrollParams(input.currency, true);
         const { cardId } = await this.#cofService.enrollCard(params);
         return {
           paymentMethod: buildSavedCardPaymentMethod(cardId),
@@ -965,7 +1044,7 @@ export class Tonder {
         });
       }
 
-      const params = await this.buildCofEnrollParams(input.currency);
+      const params = await this.buildCofEnrollParams(input.currency, true);
       const selectedCard = await this.findCustomerCard(card_id, params);
 
       if (this.isCofActive() && selectedCard.subscription_id) {
@@ -1076,6 +1155,7 @@ export class Tonder {
    * `AppError(FETCH_TRANSACTION_ERROR)` unless an `AppError` is already thrown.
    */
   public async getTransaction(id: string): Promise<RawTransaction> {
+    this.#telemetry.methodCalled('getTransaction');
     return this.getTransactionMapped(id);
   }
 
@@ -1090,6 +1170,7 @@ export class Tonder {
    * is nothing stale to serve and no `init()` dependency.
    */
   public async getPaymentMethods(): Promise<PaymentMethodInfo[]> {
+    this.#telemetry.methodCalled('getPaymentMethods');
     try {
       return toPublicPaymentMethods(
         await this.#coreApiService.getPaymentMethodCatalog(),
@@ -1112,6 +1193,7 @@ export class Tonder {
    * before `init()`.
    */
   public async getPaymentMethodBanks(): Promise<PaymentMethodBanks> {
+    this.#telemetry.methodCalled('getPaymentMethodBanks');
     try {
       return await this.#coreApiService.getPaymentMethodBanks();
     } catch (error) {
@@ -1167,6 +1249,7 @@ export class Tonder {
    * {@link canSaveCards} is `false`.
    */
   public async enrollCard(): Promise<EnrollResult> {
+    this.#telemetry.methodCalled('enrollCard');
     this.assertSaveCardsAvailable();
     const params = await this.buildCofEnrollParams();
 
@@ -1193,6 +1276,7 @@ export class Tonder {
    * {@link canSaveCards} is `false`.
    */
   public async getCustomerCards(): Promise<Card[]> {
+    this.#telemetry.methodCalled('getCustomerCards');
     this.assertSaveCardsAvailable();
     const { businessPk, secureToken, userToken } = await this.resolveCardAuth();
     try {
@@ -1221,6 +1305,7 @@ export class Tonder {
    * the card is removed; failures are normalized to `AppError(REMOVE_CARD_ERROR)`.
    */
   public async removeCustomerCard(card_id: string): Promise<void> {
+    this.#telemetry.methodCalled('removeCustomerCard');
     const { businessPk, secureToken, userToken } = await this.resolveCardAuth();
     try {
       await this.#cardService.removeCard(
@@ -1256,6 +1341,12 @@ export class Tonder {
    * identifier type is unknown, so it returns `false`.
    */
   public canSaveCards(): boolean {
+    this.#telemetry.methodCalled('canSaveCards');
+    return this.cardsCanBeSaved();
+  }
+
+  /** {@link canSaveCards} without reporting it: the SDK asks itself this too. */
+  private cardsCanBeSaved(): boolean {
     const state = this.#core.getState();
     if (state.lifecycle !== 'ready') {
       return false;
@@ -1277,7 +1368,7 @@ export class Tonder {
     if (!this.#core.getConfig().session?.customer) {
       throw new AppError({ errorCode: ErrorKeyEnum.MISSING_CUSTOMER });
     }
-    if (!this.canSaveCards()) {
+    if (!this.cardsCanBeSaved()) {
       throw new AppError({ errorCode: ErrorKeyEnum.SAVE_CARDS_UNAVAILABLE });
     }
   }
@@ -1286,8 +1377,12 @@ export class Tonder {
     return Boolean(this.#core.getState().business?.cardonfile_keys?.public_key);
   }
 
-  private async buildCofEnrollParams(currency?: string): Promise<EnrollParams> {
-    const { businessPk, secureToken, userToken } = await this.resolveCardAuth();
+  private async buildCofEnrollParams(
+    currency?: string,
+    reportCustomerStep = false,
+  ): Promise<EnrollParams> {
+    const { businessPk, secureToken, userToken } =
+      await this.resolveCardAuth(reportCustomerStep);
     const state = this.#core.getState();
     const customerInput =
       state.customerInput ?? this.#core.getConfig().session?.customer;
@@ -1328,7 +1423,7 @@ export class Tonder {
    * operations never re-register. The cached `customerInput` also supplies the
    * `enrollCard` subscription contact.
    */
-  private async ensureCustomerRegistered(): Promise<string> {
+  private async ensureCustomerRegistered(reportStep = false): Promise<string> {
     const state = this.#core.getState();
     if (state.customerAuthToken) {
       return state.customerAuthToken;
@@ -1337,10 +1432,32 @@ export class Tonder {
     if (!input) {
       throw new AppError({ errorCode: ErrorKeyEnum.MISSING_CUSTOMER });
     }
-    const customer = await this.#customerService.registerOrFetch(
-      this.#core.getConfig().api_key,
-      input,
-    );
+    const startedAt = Date.now();
+    let customer;
+    try {
+      customer = await this.#customerService.registerOrFetch(
+        this.#core.getConfig().api_key,
+        input,
+      );
+    } catch (error) {
+      if (reportStep) {
+        this.#telemetry.flowFailed('customer', {
+          ...failureFields(error),
+          duration_ms: elapsedSince(startedAt),
+        });
+        // Already reported here: the payment that surfaces it must not report it again.
+        if (typeof error === 'object' && error) {
+          this.#reportedFailures.add(error);
+        }
+      }
+      throw error;
+    }
+    if (reportStep) {
+      this.#telemetry.flowStep('customer', {
+        outcome: 'ok',
+        duration_ms: elapsedSince(startedAt),
+      });
+    }
     this.#core.setState({
       customerAuthToken: customer.authToken,
       customerInput: input,
@@ -1348,13 +1465,13 @@ export class Tonder {
     return customer.authToken;
   }
 
-  private async resolveCardAuth(): Promise<{
+  private async resolveCardAuth(reportCustomerStep = false): Promise<{
     businessPk: number;
     secureToken: string;
     userToken: string;
   }> {
     this.assertReady();
-    const userToken = await this.ensureCustomerRegistered();
+    const userToken = await this.ensureCustomerRegistered(reportCustomerStep);
     const state = this.#core.getState();
     const secureToken = this.#core.getConfig().session?.secure_token ?? '';
     if (!secureToken) {
@@ -1466,6 +1583,7 @@ export function _createTonderWithDeps(deps: {
   host?: ThreeDsHostPort;
   messenger?: CheckoutMessengerPort;
   applePay?: ApplePayAdapter;
+  telemetry?: TelemetryPort;
 }): Tonder {
   return new Tonder(
     deps.config,
@@ -1475,5 +1593,6 @@ export function _createTonderWithDeps(deps: {
     deps.host,
     deps.messenger,
     deps.applePay,
+    deps.telemetry ?? new NoopTelemetry(),
   );
 }

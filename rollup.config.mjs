@@ -2,6 +2,22 @@ import nodeResolve from '@rollup/plugin-node-resolve';
 import typescript from '@rollup/plugin-typescript';
 import terser from '@rollup/plugin-terser';
 import dts from 'rollup-plugin-dts';
+import { readFileSync } from 'node:fs';
+
+const { version } = JSON.parse(readFileSync('./package.json', 'utf8'));
+
+// Replaces the version placeholder before TypeScript compiles it.
+const sdkVersion = {
+  name: 'sdk-version',
+  transform(code, id) {
+    return id.endsWith('src/shared/version.ts')
+      ? {
+          code: code.replace('__SDK_VERSION__', JSON.stringify(version)),
+          map: null,
+        }
+      : null;
+  },
+};
 
 const input = 'src/index.ts';
 
@@ -49,6 +65,7 @@ export default [
       },
     ],
     plugins: [
+      sdkVersion,
       nodeResolve(),
       typescript({
         tsconfig: './tsconfig.json',
