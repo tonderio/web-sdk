@@ -407,9 +407,9 @@ describe('Tonder engine — flag ON routes card payments to the core', () => {
   });
 });
 
-describe('Tonder engine — 503 operations_disabled fallback', () => {
-  it('retries once on the legacy flow with the same body and request id', async () => {
-    const { http, calls, paths } = mockHttp({
+describe('Tonder engine — a core failure is never retried on the monolith', () => {
+  it('a 503 operations_disabled reaches the merchant as the core error, with no monolith request', async () => {
+    const { http, paths } = mockHttp({
       config: businessConfig(true),
       coreProcess: () => Promise.reject(disabled()),
     });
@@ -418,75 +418,53 @@ describe('Tonder engine — 503 operations_disabled fallback', () => {
       config: { ...CONFIG, events: { payment: events } },
     });
 
-    const result = await tonder.pay(payInput({ idempotency_key: 'idem-2' }));
+    const err = await tonder
+      .pay(payInput({ idempotency_key: 'idem-2' }))
+      .catch((e) => e);
 
-    expect(result.id).toBe('tx_legacy_1');
-    expect(paths()).toEqual([
-      `GET ${CORE_CONFIG}`,
-      `POST ${CORE_PROCESS}`,
-      `POST ${LEGACY_PROCESS}`,
-    ]);
-    expect(calls[2].body).toEqual(calls[1].body);
-    expect(calls[2].headers).toEqual(calls[1].headers);
-    expect(events.on_error).not.toHaveBeenCalled();
-    expect(events.on_completed).toHaveBeenCalledTimes(1);
+    expect(err).toBeInstanceOf(AppError);
+    expect(err.code).toBe(ErrorKeyEnum.PAYMENT_PROCESS_ERROR);
+    expect(paths()).toEqual([`GET ${CORE_CONFIG}`, `POST ${CORE_PROCESS}`]);
+    expect(events.on_error).toHaveBeenCalledTimes(1);
+    expect(events.on_completed).not.toHaveBeenCalled();
   });
 
-  it('pins the retried payment to the legacy engine', async () => {
-    const { http, paths } = mockHttp({
-      config: businessConfig(true),
-      coreProcess: () => Promise.reject(disabled()),
-      legacyProcess: () => Promise.resolve(tx({ id: 'tx_legacy_9' })),
-    });
-    const tonder = await ready(http);
-    await tonder.pay(payInput());
-
-    await tonder.getTransaction('tx_legacy_9');
-
-    expect(paths().at(-1)).toBe('GET /api/v1/transactions/tx_legacy_9/');
-  });
-
-  it('does not retry any other failure', async () => {
+  it.each([
+    ['a bare 503', 503, undefined],
+    [
+      'a 500 carrying operations_disabled',
+      500,
+      { error_code: 'operations_disabled' },
+    ],
+    [
+      'a 502 carrying operations_disabled',
+      502,
+      { error_code: 'operations_disabled' },
+    ],
+    [
+      'a 504 carrying operations_disabled',
+      504,
+      { error_code: 'operations_disabled' },
+    ],
+  ])('%s never creates a second payment', async (_l, status, cause) => {
     const { http, paths } = mockHttp({
       config: businessConfig(true),
       coreProcess: () =>
         Promise.reject(
           new AppError({
             errorCode: ErrorKeyEnum.REQUEST_FAILED,
-            status_code: 503,
+            status_code: status,
+            ...(cause ? { originalError: cause } : {}),
           }),
         ),
     });
     const tonder = await ready(http);
 
-    const err = await tonder.pay(payInput()).catch((e) => e);
-
-    expect(err.code).toBe(ErrorKeyEnum.PAYMENT_PROCESS_ERROR);
+    await expect(tonder.pay(payInput())).rejects.toMatchObject({
+      code: ErrorKeyEnum.PAYMENT_PROCESS_ERROR,
+    });
     expect(paths()).toEqual([`GET ${CORE_CONFIG}`, `POST ${CORE_PROCESS}`]);
   });
-
-  it.each([500, 502, 504])(
-    'a %s carrying operations_disabled never creates a second payment',
-    async (status) => {
-      const { http, paths } = mockHttp({
-        config: businessConfig(true),
-        coreProcess: () =>
-          Promise.reject(
-            new AppError({
-              errorCode: ErrorKeyEnum.REQUEST_FAILED,
-              status_code: status,
-              originalError: { error_code: 'operations_disabled' },
-            }),
-          ),
-      });
-      const tonder = await ready(http);
-
-      await expect(tonder.pay(payInput())).rejects.toMatchObject({
-        code: ErrorKeyEnum.PAYMENT_PROCESS_ERROR,
-      });
-      expect(paths()).toEqual([`GET ${CORE_CONFIG}`, `POST ${CORE_PROCESS}`]);
-    },
-  );
 
   it('a network error after the send never creates a second payment', async () => {
     const { http, paths } = mockHttp({
@@ -497,23 +475,6 @@ describe('Tonder engine — 503 operations_disabled fallback', () => {
 
     await expect(tonder.pay(payInput())).rejects.toBeInstanceOf(AppError);
     expect(paths()).toEqual([`GET ${CORE_CONFIG}`, `POST ${CORE_PROCESS}`]);
-  });
-
-  it('does not loop when the legacy retry fails too', async () => {
-    const { http, paths } = mockHttp({
-      config: businessConfig(true),
-      coreProcess: () => Promise.reject(disabled()),
-      legacyProcess: () => Promise.reject(disabled()),
-    });
-    const tonder = await ready(http);
-
-    await expect(tonder.pay(payInput())).rejects.toMatchObject({
-      code: ErrorKeyEnum.PAYMENT_PROCESS_ERROR,
-    });
-    expect(paths().filter((p) => p.startsWith('POST'))).toEqual([
-      `POST ${CORE_PROCESS}`,
-      `POST ${LEGACY_PROCESS}`,
-    ]);
   });
 });
 

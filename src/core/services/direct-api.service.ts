@@ -100,37 +100,6 @@ export const CORE_API_ROUTES: PaymentRoutes = {
 };
 
 /**
- * Whether a failed `processPayment` was the transactions API's emergency stop:
- * status `503` with the `operations_disabled` code, and only that status.
- * Nothing was created, so the same payment may be retried once on the Direct
- * API. Looks through the service's own wrapping. Any other failure is not it,
- * a bare `503` or another status carrying the code included.
- */
-export function isOperationsDisabled(error: unknown): boolean {
-  let current: unknown = error;
-  for (
-    let depth = 0;
-    depth < 3 && typeof current === 'object' && current;
-    depth += 1
-  ) {
-    const record = current as {
-      status_code?: unknown;
-      error_code?: unknown;
-      originalError?: unknown;
-    };
-    const cause = record.originalError as { error_code?: unknown } | undefined;
-    if (
-      record.error_code === 'operations_disabled' ||
-      cause?.error_code === 'operations_disabled'
-    ) {
-      return record.status_code === 503;
-    }
-    current = record.originalError;
-  }
-  return false;
-}
-
-/**
  * Domain service that processes a one-shot payment via the Direct API.
  *
  * PURE: depends only on the injected {@link HttpPort} — never on `fetch`/DOM.

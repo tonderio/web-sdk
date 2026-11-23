@@ -12,7 +12,6 @@ import { CustomerService } from './core/services/customer.service';
 import {
   CORE_API_ROUTES,
   DirectApiService,
-  isOperationsDisabled,
   type ProcessPaymentBody,
 } from './core/services/direct-api.service';
 import { VaultService } from './core/services/vault.service';
@@ -721,26 +720,19 @@ export class Tonder {
    * Create the payment on `engine` and pin the engine that created it to the
    * transaction id.
    *
-   * A transactions API answer of `503 operations_disabled` means nothing was
-   * created, so the same body and request id are sent once to the Direct API.
-   * Any other failure stays as it is.
+   * The engine is fixed when the payment starts and a failure is never retried
+   * on the other one: a core answer lost after the send may have created the
+   * payment, so a second create on the monolith could charge twice.
    */
   private async processOnEngine(
     engine: PaymentEngine,
     body: ProcessPaymentBody,
     requestId: string | undefined,
   ): Promise<BackendTransactionResponse> {
-    if (engine === 'core') {
-      try {
-        const raw = await this.#coreApiService.processPayment(body, requestId);
-        this.#enginePin.remember(raw.id, 'core');
-        return raw;
-      } catch (error) {
-        if (!isOperationsDisabled(error)) throw error;
-      }
-    }
-    const raw = await this.#directApiService.processPayment(body, requestId);
-    this.#enginePin.remember(raw.id, 'legacy');
+    const service =
+      engine === 'core' ? this.#coreApiService : this.#directApiService;
+    const raw = await service.processPayment(body, requestId);
+    this.#enginePin.remember(raw.id, engine);
     return raw;
   }
 

@@ -367,10 +367,10 @@ MUST call `GET /transactions/v1/{id}` first. Only a `404` answer (the payment is
 not the API's) MAY be followed by one read of the legacy route; any other
 failure MUST be surfaced without a second call.
 
-When the Tonder payments API answers `503` with the error code `operations_disabled`
-to the create, the SDK MUST send the same body and request id once to the legacy
-route and MUST NOT surface the first failure. Any other failure MUST NOT be
-retried.
+The engine is chosen only by `core_payments_enabled` when the SDK starts. When the
+Tonder payments API fails the create (a `503` included), the SDK MUST surface
+the error as it does any other core error and MUST NOT retry that payment on the
+legacy route, because the answer may have been lost after the payment was created.
 
 #### Scenario: Flag on, card payment
 
@@ -393,8 +393,9 @@ retried.
 - WHEN `pay()` is called with a card
 - THEN the create is `POST /api/v1/process/` with no `X-Request-Id`
 
-#### Scenario: Emergency stop falls back once
+#### Scenario: A core failure is never retried on the legacy route
 
 - GIVEN `core_payments_enabled` is `true`
-- WHEN the create answers `503` with code `operations_disabled`
-- THEN the same body and request id are sent once to `/api/v1/process/`
+- WHEN the create answers `503` (with or without code `operations_disabled`)
+- THEN the payment rejects with `PAYMENT_PROCESS_ERROR`
+- AND no request is made to `/api/v1/process/`
