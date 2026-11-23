@@ -167,6 +167,8 @@ function assertValidConfig(config: TonderConfig): void {
  */
 /** Where a `pay()` is, for the telemetry of its steps. */
 interface PayFlow {
+  /** The payment left for a redirect: its outcome is not a `result` here. */
+  redirected?: boolean;
   step: string;
   stepStartedAt: number;
   paymentMethodType: string | undefined;
@@ -648,10 +650,12 @@ export class Tonder {
       // Cannot throw (see `emitPayment`), so a successful payment can never
       // fall into the catch below and report itself as a failure.
       this.#paymentEvents.onCompleted(tx);
-      this.#telemetry.flowStep('result', {
-        ...this.flowFields(flow),
-        outcome: isSuccessfulStatus(tx.status) ? 'ok' : 'error',
-      });
+      if (!flow.redirected) {
+        this.#telemetry.flowStep('result', {
+          ...this.flowFields(flow),
+          outcome: isSuccessfulStatus(tx.status) ? 'ok' : 'error',
+        });
+      }
       return tx;
     } catch (error) {
       if (!this.#reportedFailures.has(error as object)) {
@@ -746,8 +750,11 @@ export class Tonder {
       !Tonder.isMethodType(inputType, 'card') &&
       !Tonder.isMethodType(inputType, 'saved_card')
     ) {
+      if (this.leavesPage(raw)) this.reportRedirect(flow);
       return await this.handleApmResult(tx);
     }
+
+    if (this.leavesPage(raw)) this.reportRedirect(flow);
 
     // A `next_action.redirect_to_url.url` on the RAW body means the backend
     // needs an extra step (3DS). Present it per `presentation_mode`; otherwise the
@@ -758,6 +765,30 @@ export class Tonder {
 
     await this.resetCardFieldsAfterSuccessfulPayment(inputType, input, finalTx);
     return finalTx;
+  }
+
+  /** Whether presenting this answer navigates the page away (redirect mode). */
+  private leavesPage(raw: BackendTransactionResponse): boolean {
+    const mode =
+      this.#core.getConfig().presentation_mode ?? DEFAULT_PRESENTATION_MODE;
+    return (
+      mode === 'redirect' && Boolean(raw.next_action?.redirect_to_url?.url)
+    );
+  }
+
+  /**
+   * The payment is about to leave for a redirect (3DS challenge or hosted page):
+   * its final status is not known here, so it is a `redirect` step, not a
+   * `result`. Flushed now because the page is going away and a queued event
+   * would be lost.
+   */
+  private reportRedirect(flow: PayFlow): void {
+    flow.redirected = true;
+    this.#telemetry.flowStep('redirect', {
+      ...this.flowFields(flow),
+      outcome: 'ok',
+    });
+    this.#telemetry.flush();
   }
 
   /** Close the current step of a payment as done and open `next`. */

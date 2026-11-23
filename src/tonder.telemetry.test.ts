@@ -10,6 +10,8 @@ import type { HttpPort, HttpRequestOptions } from './ports/http.port';
 import { asHttpPort } from './test-support/http.mock';
 import type { TelemetryPort } from './ports/telemetry.port';
 import type { TokenizerPort } from './ports/tokenizer.port';
+import type { CheckoutMessengerPort } from './ports/checkout-messenger.port';
+import type { ThreeDsHostPort } from './ports/threeds-host.port';
 import type {
   ApplePayAdapter,
   ApplePayPaymentToken,
@@ -79,6 +81,7 @@ function fakeTelemetry() {
     flowStep: (s, f) => calls.push(['step', s, f as Record<string, unknown>]),
     flowFailed: (s, f) =>
       calls.push(['failed', s, f as Record<string, unknown>]),
+    flush: () => calls.push(['flush', 'flush']),
   };
   return { port, calls };
 }
@@ -592,4 +595,114 @@ describe('telemetry — the customer step belongs to payments', () => {
       ).toBe(false);
     },
   );
+});
+
+describe('telemetry — a payment that goes through a 3DS challenge', () => {
+  const CHALLENGE = {
+    ...tx('Pending'),
+    next_action: { redirect_to_url: { url: 'https://auth.example/challenge' } },
+  };
+
+  function threeDsSetup(
+    core: boolean,
+    mode: 'embedded' | 'redirect',
+    final = 'Success',
+  ) {
+    const telemetry = fakeTelemetry();
+    const http: HttpPort = asHttpPort((o: HttpRequestOptions) => {
+      if (o.path === CORE_CONFIG) {
+        return Promise.resolve(businessConfig(core));
+      }
+      if (o.path === CORE_PROCESS || o.path === LEGACY_PROCESS) {
+        return Promise.resolve(CHALLENGE);
+      }
+      if (o.method === 'GET') return Promise.resolve(tx(final));
+      return Promise.reject(new Error(`unexpected ${o.method} ${o.path}`));
+    });
+    const host: ThreeDsHostPort = {
+      redirect: vi.fn(() => telemetry.calls.push(['redirect', 'redirect'])),
+      open: vi.fn(),
+      close: vi.fn(),
+    };
+    const messenger: CheckoutMessengerPort = {
+      waitForCompletion: vi.fn(() => Promise.resolve()),
+    };
+    const tonder = _createTonderWithDeps({
+      config: { ...CONFIG, presentation_mode: mode },
+      http,
+      tokenizer: {
+        mount: vi.fn(() => Promise.resolve()),
+        unmount: vi.fn(),
+        collect: vi.fn(() => Promise.resolve({})),
+        reveal: vi.fn(() => Promise.resolve()),
+      },
+      host,
+      messenger,
+      telemetry: telemetry.port,
+    });
+    return { tonder, host, ...telemetry };
+  }
+
+  it.each([
+    ['monolith', false],
+    ['core', true],
+  ])(
+    'redirect on the %s: one redirect step, flushed before the page leaves, no result',
+    async (_l, core) => {
+      const s = threeDsSetup(core, 'redirect');
+      await s.tonder.init();
+      s.calls.length = 0;
+
+      await s.tonder.pay(payInput({ idempotency_key: 'idem-key-9' }));
+
+      expect(summary(s.calls)).toEqual([
+        'method:pay',
+        'step:start',
+        'step:charge',
+        'step:redirect',
+        'flush:flush',
+        'redirect:redirect',
+      ]);
+      expect(s.calls[3][2]).toMatchObject({
+        outcome: 'ok',
+        payment_method_type: 'CARD',
+        request_id: '7_idem-key-9',
+      });
+    },
+  );
+
+  it.each([
+    ['monolith', false],
+    ['core', true],
+  ])(
+    'embedded on the %s: one result with the final status, after the challenge',
+    async (_l, core) => {
+      const s = threeDsSetup(core, 'embedded');
+      await s.tonder.init();
+      s.calls.length = 0;
+
+      await s.tonder.pay(payInput());
+
+      expect(summary(s.calls)).toEqual([
+        'method:pay',
+        'step:start',
+        'step:charge',
+        'step:result',
+      ]);
+      expect(s.calls[3][2]).toMatchObject({ outcome: 'ok' });
+    },
+  );
+
+  it('embedded: a challenge that ends declined is one result with outcome error', async () => {
+    const s = threeDsSetup(true, 'embedded', 'Declined');
+    await s.tonder.init();
+    s.calls.length = 0;
+
+    await s.tonder.pay(payInput());
+
+    expect(summary(s.calls).filter((c) => c.includes('result'))).toEqual([
+      'step:result',
+    ]);
+    expect(s.calls.at(-1)![2]).toMatchObject({ outcome: 'error' });
+  });
 });

@@ -5,6 +5,7 @@ const client = {
   methodCalled: vi.fn(),
   flowStep: vi.fn(),
   flowFailed: vi.fn(),
+  flush: vi.fn(() => Promise.resolve()),
 };
 let factory: (options: Record<string, unknown>) => unknown = () => client;
 
@@ -74,6 +75,20 @@ describe('ClientTelemetryAdapter', () => {
       error_code: 'X',
       http_status: 503,
     });
+  });
+
+  it('flushes the client without waiting for it and without throwing', () => {
+    const t = build();
+
+    t.flush();
+    expect(client.flush).toHaveBeenCalledTimes(1);
+
+    client.flush.mockImplementationOnce(() => Promise.reject(new Error('x')));
+    expect(() => t.flush()).not.toThrow();
+    client.flush.mockImplementationOnce(() => {
+      throw new Error('x');
+    });
+    expect(() => t.flush()).not.toThrow();
   });
 
   it('never throws into the page, even if the client does', () => {

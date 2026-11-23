@@ -17,4 +17,6 @@ export interface TelemetryPort {
   methodCalled(method: string, options?: { deprecated?: boolean }): void;
   flowStep(step: string, fields?: TelemetryFields): void;
   flowFailed(step: string, fields?: TelemetryFields): void;
+  /** Send what is queued now, for a page that is about to leave. Never awaited. */
+  flush(): void;
 }
