@@ -10,6 +10,8 @@ If your business is enabled for the Tonder payments API, the SDK sends card paym
 
 In the same way, when your business is enabled for the Tonder payments API the SDK registers the customer and lists, saves and removes saved cards there instead of on the legacy routes. Keep minting the `secure_token` on the same endpoint as before; the request and the answer you get from the SDK do not change.
 
+When your business is enabled for the Tonder payments API, the Apple Pay charge goes there too; otherwise it stays on the legacy route. The SDK sends an `X-Request-Id` header on every card and Apple Pay payment: your `idempotency_key` (scoped to your business) when you give one, otherwise a generated id.
+
 The payment-method list, the SafetyPay bank list, the secure card-field token and the Apple Pay merchant validation always use the Tonder payments API, whether or not your business is enabled for it. The request and the answer the SDK gives you are the same.
 
 What changes is only this:
@@ -139,7 +141,7 @@ That is the whole flow. What it leaves out — a custom container id, the three 
 
 ### 3. Keep your reconciliation as it is [Server-side]
 
-Nothing to do. The Apple Pay charge lands on `/api/v1/process/` like your card charges, produces a transaction with the same shape, and fires the same webhook. Your existing handler already covers it.
+Nothing to do. The Apple Pay charge lands on the same system and route as your card charges (the Tonder payments API `/transactions/v1/process` when your business is enabled for it, `/api/v1/process/` otherwise), produces a transaction with the same shape, and fires the same webhook. Your existing handler already covers it.
 
 Send `client_reference` in the button's payment data exactly as you do today and your correlation keeps working.
 

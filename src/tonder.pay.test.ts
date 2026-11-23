@@ -518,7 +518,7 @@ describe('Tonder.pay — happy paths', () => {
       expect.objectContaining({
         method: 'POST',
         path: '/api/v1/process/',
-        headers: {},
+        headers: { 'X-Request-Id': expect.stringMatching(/^[0-9a-f-]{16,}$/i) },
         body: expect.objectContaining({
           operation_type: 'payment',
           amount: 150,
@@ -947,7 +947,7 @@ describe('Tonder.pay — saved card', () => {
       expect.objectContaining({
         method: 'POST',
         path: '/api/v1/process/',
-        headers: {},
+        headers: { 'X-Request-Id': expect.stringMatching(/^[0-9a-f-]{16,}$/i) },
         body: expect.objectContaining({
           operation_type: 'payment',
           amount: 150,

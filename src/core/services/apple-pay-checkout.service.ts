@@ -9,7 +9,7 @@
  * exactly one mutable field, the live session, and a shared instance would let
  * a second button's `unmount()` abort the first button's live sheet.
  */
-import { DirectApiService } from './direct-api.service';
+import type { DirectApiService } from './direct-api.service';
 import { ApplePayService } from './apple-pay.service';
 import {
   buildApplePayPaymentMethod,
@@ -17,7 +17,7 @@ import {
 } from '../strategies/apple-pay.strategy';
 import {
   buildProcessBody,
-  scopeRequestId,
+  resolveRequestId,
   DEFAULT_CURRENCY,
 } from '../strategies/process-body.strategy';
 import {
@@ -48,7 +48,11 @@ export interface ApplePayCheckoutContext {
 export interface ApplePayCheckoutDeps {
   applePay: ApplePayPort;
   validation: ApplePayService;
-  directApi: DirectApiService;
+  /**
+   * Charges the payment on whichever system the business is on. The engine is
+   * chosen by the owner of this dep at call time, never captured here.
+   */
+  payments: Pick<DirectApiService, 'processPayment'>;
   /** Live reads at click/fire time. Never snapshotted. */
   getContext(): ApplePayCheckoutContext;
   /**
@@ -163,7 +167,7 @@ export class ApplePayCheckoutService {
 
     try {
       const ctx = this.deps.getContext();
-      const raw = await this.deps.directApi.processPayment(
+      const raw = await this.deps.payments.processPayment(
         buildProcessBody({
           payment,
           // The token travels BY REFERENCE, whole and unread. The SDK is a
@@ -173,7 +177,7 @@ export class ApplePayCheckoutService {
           currency,
           presentationMode: ctx.presentationMode,
         }),
-        scopeRequestId(payment.idempotency_key, ctx.businessPk),
+        resolveRequestId(payment.idempotency_key, ctx.businessPk),
       );
 
       const tx = toRawTransaction(raw);

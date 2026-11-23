@@ -1360,6 +1360,8 @@ await tonder.pay({
 
 `idempotency_key` is important for retry-safe checkout flows: keep it stable for the same payment attempt so retries do not create duplicate charges. Do not reuse `client_reference` as the idempotency key.
 
+The SDK always sends it as the `X-Request-Id` header (scoped to your business) on card and Apple Pay payments; without an `idempotency_key` it sends a new generated id for each attempt.
+
 Use `metadata` for non-sensitive merchant context that helps reconciliation and reports. You can send any JSON-safe fields your commerce system needs. These metadata keys have reporting meaning when present:
 
 | Metadata key     | Column in the report        | What it is                                                                                       |

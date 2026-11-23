@@ -173,7 +173,7 @@ function harness(
   const deps: ApplePayCheckoutDeps = {
     applePay: port,
     validation: new ApplePayService(validateHttp),
-    directApi: new DirectApiService(processHttp),
+    payments: new DirectApiService(processHttp),
     getContext: () => context(options.ctx),
     emit,
   };
@@ -267,7 +267,7 @@ describe('ApplePayCheckoutService.start — click-path synchrony (T1, T2)', () =
     const checkout = new ApplePayCheckoutService({
       applePay: port,
       validation: new ApplePayService(asHttpPort(() => Promise.resolve({}))),
-      directApi: new DirectApiService(processHttp),
+      payments: new DirectApiService(processHttp),
       getContext: () => context(),
       emit: fakeSink(),
     });
@@ -558,7 +558,7 @@ describe('The Apple Pay /process body comes from the shared builder (D3, T13)', 
     const checkout = new ApplePayCheckoutService({
       applePay: port,
       validation: new ApplePayService(asHttpPort(() => Promise.resolve({}))),
-      directApi: new DirectApiService(processHttp),
+      payments: new DirectApiService(processHttp),
       getContext: () => context(),
       emit: fakeSink(),
     });
@@ -599,7 +599,7 @@ describe('The Apple Pay /process body comes from the shared builder (D3, T13)', 
     const checkout = new ApplePayCheckoutService({
       applePay: port,
       validation: new ApplePayService(asHttpPort(() => Promise.resolve({}))),
-      directApi: new DirectApiService(processHttp),
+      payments: new DirectApiService(processHttp),
       getContext: () => context(),
       emit: fakeSink(),
     });
@@ -623,7 +623,7 @@ describe('The Apple Pay /process body comes from the shared builder (D3, T13)', 
     const checkout = new ApplePayCheckoutService({
       applePay: port,
       validation: new ApplePayService(asHttpPort(() => Promise.resolve({}))),
-      directApi: new DirectApiService(processHttp),
+      payments: new DirectApiService(processHttp),
       getContext: () => ctx,
       emit: fakeSink(),
     });

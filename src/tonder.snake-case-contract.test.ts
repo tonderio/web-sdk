@@ -102,7 +102,9 @@ describe('public snake_case contract', () => {
     });
 
     expect(processSpy).toHaveBeenCalledOnce();
-    expect(processSpy.mock.calls[0][0].headers).toEqual({});
+    expect(processSpy.mock.calls[0][0].headers).toEqual({
+      'X-Request-Id': expect.stringMatching(/^[0-9a-f-]{16,}$/i),
+    });
     expect(processSpy.mock.calls[0][0].body).toMatchObject({
       return_url: 'https://merchant.example/return/tx_1',
       presentation_mode: 'embedded',

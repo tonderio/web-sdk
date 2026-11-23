@@ -12,6 +12,7 @@ import type { ProcessPaymentBody } from '../services/direct-api.service';
 import type { Customer, PayInput } from '../../shared/types';
 import { AppError } from '../../shared/errors/AppError';
 import { ErrorKeyEnum } from '../../shared/errors/ErrorKeyEnum';
+import { newRequestId } from '../../shared/utils/request-id';
 
 /** Default currency when the caller omits `pay({ currency })`. */
 export const DEFAULT_CURRENCY = 'MXN';
@@ -80,6 +81,18 @@ export function buildProcessBody(
     body.billing_address = input.payment.billing_address;
   }
   return body;
+}
+
+/**
+ * The `X-Request-Id` of one payment attempt: the merchant's key scoped by
+ * business when given, otherwise a fresh id. Always present, whichever system
+ * takes the payment.
+ */
+export function resolveRequestId(
+  idempotencyKey: string | undefined,
+  businessPk: number | undefined,
+): string {
+  return scopeRequestId(idempotencyKey, businessPk) ?? newRequestId();
 }
 
 /**
