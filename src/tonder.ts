@@ -22,7 +22,7 @@ import {
 import { buildApmPaymentMethod } from './core/strategies/apm.strategy';
 import {
   buildProcessBody,
-  scopeRequestId,
+  resolveRequestId,
   DEFAULT_CURRENCY,
   DEFAULT_PRESENTATION_MODE,
 } from './core/strategies/process-body.strategy';
@@ -57,7 +57,6 @@ import { pollUntilFinal, type PollOptions } from './shared/utils/poll';
 import type { AcquirerPort } from './ports/acquirer.port';
 import type { HttpPort } from './ports/http.port';
 import type { EnginePinPort, PaymentEngine } from './ports/engine-pin.port';
-import { newRequestId } from './shared/utils/request-id';
 import type { TokenizerPort } from './ports/tokenizer.port';
 import { resolveEnv, type TonderBaseUrls } from './shared/config/env';
 import { snapshotPaymentInput } from './shared/payment-input-snapshot';
@@ -376,7 +375,10 @@ export class Tonder {
     const checkout = new ApplePayCheckoutService({
       applePay: this.#applePay,
       validation: this.#applePayService,
-      directApi: this.#directApiService,
+      payments: {
+        processPayment: (body, requestId) =>
+          this.processOnEngine(this.applePayEngine(), body, requestId),
+      },
       getContext: () => {
         const state = this.#core.getState();
         return {
@@ -662,11 +664,10 @@ export class Tonder {
 
     try {
       const engine = this.engineFor(inputType);
-      const requestId =
-        scopeRequestId(
-          input.idempotency_key,
-          this.#core.getState().business?.business.pk,
-        ) ?? (engine === 'core' ? newRequestId() : undefined);
+      const requestId = resolveRequestId(
+        input.idempotency_key,
+        this.#core.getState().business?.business.pk,
+      );
       raw = await this.processOnEngine(engine, body, requestId);
     } catch (error) {
       await this.rollbackAutoEnrolledCard(resolved);
@@ -702,18 +703,27 @@ export class Tonder {
   /**
    * The engine for a payment that is about to start. Only card payments (new
    * card or saved card) go to the transactions API, and only when the business
-   * is enabled for it; everything else stays on the Direct API.
+   * is enabled for it; everything else stays on the Direct API. Apple Pay is
+   * decided by {@link applePayEngine}.
    */
   private engineFor(inputType: string): PaymentEngine {
     const isCard =
       Tonder.isMethodType(inputType, 'card') ||
       Tonder.isMethodType(inputType, 'saved_card');
-    // Strictly the boolean `true`: a string or number from a wrong-shaped
-    // answer must never route a payment to the transactions API.
-    return isCard &&
-      this.#core.getState().business?.core_payments_enabled === true
-      ? 'core'
-      : 'legacy';
+    return isCard && this.isCoreBusiness() ? 'core' : 'legacy';
+  }
+
+  /** The engine of an Apple Pay charge, read when the shopper authorizes it. */
+  private applePayEngine(): PaymentEngine {
+    return this.isCoreBusiness() ? 'core' : 'legacy';
+  }
+
+  /**
+   * Strictly the boolean `true`: a string or number from a wrong-shaped answer
+   * must never route a payment to the transactions API.
+   */
+  private isCoreBusiness(): boolean {
+    return this.#core.getState().business?.core_payments_enabled === true;
   }
 
   /**

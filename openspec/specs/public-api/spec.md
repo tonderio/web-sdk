@@ -80,16 +80,12 @@ absent, `pay()` MUST throw `MISSING_CUSTOMER` before any network call. The
 by joining `first_name` and `last_name` from `config.session.customer`.
 `PayInput.client_reference` MUST be required and remain in the `/process` body
 as the merchant business reference. `PayInput.idempotency_key`, when provided,
-MUST be sent as the Direct API `X-Request-Id` header for `POST /api/v1/process/`.
-When `idempotency_key` is omitted, the SDK MUST omit `X-Request-Id` entirely
-on the legacy route. The SDK MUST NOT generate a random idempotency key for
-the legacy route and MUST NOT fall back from `client_reference` to `X-Request-Id`.
-
-Exception, for a payment that runs on the Tonder payments API (see "Card payments
-run on the engine chosen at init()"): the SDK MUST send an `X-Request-Id` on
-`POST /transactions/v1/process`, the scoped `idempotency_key` when provided and
-otherwise a fresh id generated for that payment attempt, never reused by a
-later `pay()` call.
+MUST be sent, scoped by business, as the `X-Request-Id` header. The SDK MUST
+always send an `X-Request-Id`, on `POST /api/v1/process/` and on
+`POST /transactions/v1/process` alike, for cards and Apple Pay: the scoped
+`idempotency_key` when provided and otherwise a fresh id generated for that
+payment attempt, never reused by a later payment. The SDK MUST NOT fall back
+from `client_reference` to `X-Request-Id`.
 
 #### Scenario: pay() with a configured customer sends a derived name and email
 
@@ -118,19 +114,19 @@ later `pay()` call.
 - THEN `client_reference` is mandatory
 - AND `idempotency_key` is optional and maps only to `X-Request-Id`
 
-#### Scenario: pay() omits X-Request-Id when no idempotency key is provided
+#### Scenario: pay() generates an X-Request-Id when no idempotency key is provided
 
 - GIVEN a valid pay request with `client_reference` set and no `idempotency_key`
 - WHEN the SDK calls `POST /api/v1/process/`
-- THEN the request does not include `X-Request-Id`
-- AND the SDK does not synthesize a replacement value
+- THEN the request includes a generated `X-Request-Id`
+- AND it is not derived from `client_reference`
 
 #### Scenario: pay() does not use client_reference as idempotency
 
 - GIVEN a valid pay request with `client_reference` set and no `idempotency_key`
 - WHEN the SDK calls `POST /api/v1/process/`
 - THEN `client_reference` is present only in the payment payload
-- AND `X-Request-Id` is absent
+- AND `X-Request-Id` is not `client_reference`
 
 ### Requirement: Customer is optional at initialization and required only for customer-dependent flows
 
@@ -391,7 +387,7 @@ legacy route, because the answer may have been lost after the payment was create
 
 - GIVEN `core_payments_enabled` is `false` or absent
 - WHEN `pay()` is called with a card
-- THEN the create is `POST /api/v1/process/` with no `X-Request-Id`
+- THEN the create is `POST /api/v1/process/` with an `X-Request-Id`
 
 #### Scenario: A core failure is never retried on the legacy route
 

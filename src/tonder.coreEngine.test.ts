@@ -240,13 +240,13 @@ describe('Tonder engine — flag OFF keeps today', () => {
     },
   );
 
-  it('legacy process keeps sending no X-Request-Id without an idempotency key', async () => {
+  it('legacy process sends a generated X-Request-Id without an idempotency key', async () => {
     const { http, calls } = mockHttp({ config: businessConfig(false) });
     const tonder = await ready(http);
 
     await tonder.pay(payInput());
 
-    expect(calls[1].headers).toEqual({});
+    expect(calls[1].headers?.['X-Request-Id']).toMatch(/^[0-9a-f-]{16,}$/i);
   });
 });
 

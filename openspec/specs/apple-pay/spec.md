@@ -1179,7 +1179,10 @@ MUST NOT exist. `event.payment.token` MUST reach that body as the payment
 method's `token` field BY REFERENCE — the same object `onPaymentAuthorized`
 received, never `JSON.stringify`d or reshaped. The Apple Pay charge MUST be
 issued through `DirectApiService.processPayment`, the same method `pay()`
-calls.
+calls: on the transactions API when the business config's
+`core_payments_enabled` is the boolean `true` (read at authorization time),
+otherwise on the legacy route. It MUST carry an `X-Request-Id`: the scoped
+`idempotency_key` when given, otherwise a generated id.
 
 #### Scenario: Both callers invoke the same exported builder function
 
