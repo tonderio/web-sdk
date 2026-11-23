@@ -508,7 +508,7 @@ describe('telemetry — the customer step belongs to payments', () => {
         tokenizer: tokenizer(),
         telemetry: new ClientTelemetryAdapter({
           env: 'sandbox',
-          endpoint: 'https://stage.tonder.io/telemetry',
+          endpoint: 'https://api-stage.tonder.io/telemetry',
           apiKey: 'api_key_under_test',
         }),
       });
@@ -519,7 +519,7 @@ describe('telemetry — the customer step belongs to payments', () => {
 
       const sent = fetchMock.mock.calls.filter(
         ([url]) =>
-          String(url) === 'https://stage.tonder.io/telemetry/v1/events',
+          String(url) === 'https://api-stage.tonder.io/telemetry/v1/events',
       ) as unknown as [string, { body: string }][];
       const events = sent.flatMap(
         ([, init]) =>
