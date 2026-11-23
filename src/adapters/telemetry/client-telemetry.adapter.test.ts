@@ -21,7 +21,7 @@ import { SDK_VERSION } from '../../shared/version';
 function build() {
   return new ClientTelemetryAdapter({
     env: 'stage',
-    endpoint: 'https://stage.tonder.io/telemetry',
+    endpoint: 'https://api-stage.tonder.io/telemetry',
     apiKey: 'api_key_under_test',
   });
 }
@@ -41,7 +41,7 @@ describe('ClientTelemetryAdapter', () => {
     expect(created[0].sdk).toEqual({ name: 'web-sdk', version: SDK_VERSION });
     expect(SDK_VERSION).toMatch(/^[0-9]+\.[0-9]+\.[0-9]+/);
     expect(created[0].env).toBe('stage');
-    expect(created[0].endpoint).toBe('https://stage.tonder.io/telemetry');
+    expect(created[0].endpoint).toBe('https://api-stage.tonder.io/telemetry');
   });
 
   it('authorizes with the same header the SDK sends to Tonder', async () => {

@@ -228,7 +228,8 @@ export class Tonder {
       telemetry ??
       new ClientTelemetryAdapter({
         env: config.environment,
-        endpoint: `${this.#env.api}/telemetry`,
+        // The microservices domain, like the transactions API: the monolith host has no telemetry route.
+        endpoint: `${this.#env.core}/telemetry`,
         apiKey: config.api_key,
       });
     this.#http = http ?? new FetchHttpClient(this.#env.api, config.api_key);
