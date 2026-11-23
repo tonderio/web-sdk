@@ -57,6 +57,12 @@ export class ClientTelemetryAdapter implements TelemetryPort {
     this.safely((client) => client.flowFailed(step, fields));
   }
 
+  public flush(): void {
+    this.safely((client) => {
+      void client.flush().catch(() => undefined);
+    });
+  }
+
   private safely(send: (client: Client) => void): void {
     if (!this.client) return;
     try {
@@ -72,4 +78,5 @@ export class NoopTelemetry implements TelemetryPort {
   public methodCalled(): void {}
   public flowStep(): void {}
   public flowFailed(): void {}
+  public flush(): void {}
 }
