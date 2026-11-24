@@ -14,6 +14,14 @@ export interface BackendNextAction {
     url: string;
     verify_transaction_status_url?: string;
   };
+  /**
+   * Argentina QR: what the buyer scans, for a merchant that renders its own
+   * page. The transactions API answers it beside `redirect_to_url`; the SDK
+   * hands it through untouched.
+   */
+  display_qr_code?: Record<string, unknown>;
+  /** Argentina transfer: the account data to pay to; handed through as is. */
+  display_bank_transfer?: Record<string, unknown>;
 }
 
 /**

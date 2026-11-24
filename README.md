@@ -786,7 +786,7 @@ Use `getPaymentMethods()` when you want to render the methods enabled for your b
 
 **Argentina methods (`qr`, `transfer`) are ARS-only.** Pass `currency: 'ARS'` to `pay()` for these rails — the SDK default is `MXN`, so omitting it would charge the wrong currency.
 
-**The code reaches Tonder exactly as you write it.** The SDK does not re-case it, so `spei` and `SPEI` both work and each is stored and echoed back in your webhook's `payment_method_type` as you sent it. Pick one spelling and keep it, or your own reports will show the same method under two names.
+**The code reaches Tonder exactly as you write it.** The SDK does not re-case it, so `spei` and `SPEI` both work and each is stored and echoed back in your webhook's `payment_method_type` as you sent it. Pick one spelling and keep it, or your own reports will show the same method under two names. The exception is a business on the transactions API: it stores and answers the seven APM types it charges (see [Which system charges an APM](#which-system-charges-an-apm)) in upper case, like `CARD`, whatever case you sent, so `getTransaction()` and your webhook carry `OXXOPAY` for a payment created as `oxxopay`.
 
 `card` and `saved_card` are the exception: both are sent as `CARD`, because a stored card is a card charge with a token rather than a separate method.
 
@@ -834,6 +834,10 @@ const transaction = await tonder.pay({
 ```
 
 APM/SPEI methods often settle asynchronously. Use webhooks for fulfillment.
+
+#### Which system charges an APM
+
+For a business enabled for the transactions API, `oxxopay`, `mercadopago`, `safetypaycash`, `safetypaytransfer`, `neosurf`, `qr` and `transfer` are charged there, the same as cards; `spei` and any other code stay on the Direct API. The case you write does not matter for the choice. Nothing else changes in your code: the answer, the redirect and the webhooks are the same, except that the transactions API answers the type upper-case (`getTransaction()`, webhooks).
 
 ### Apple Pay
 

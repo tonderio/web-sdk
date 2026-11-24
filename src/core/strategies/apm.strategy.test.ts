@@ -1,5 +1,26 @@
 import { describe, it, expect } from 'vitest';
-import { buildApmPaymentMethod } from './apm.strategy';
+import { buildApmPaymentMethod, isCoreApm } from './apm.strategy';
+
+describe('isCoreApm', () => {
+  it.each([
+    'oxxopay',
+    'MercadoPago',
+    'safetypaycash',
+    'SAFETYPAYTRANSFER',
+    'neosurf',
+    'qr',
+    'Transfer',
+  ])('%j is charged by the transactions API', (code) => {
+    expect(isCoreApm(code)).toBe(true);
+  });
+
+  it.each(['spei', 'card', 'saved_card', 'wallet', 'apple_pay', ''])(
+    '%j is not one of its alternative methods',
+    (code) => {
+      expect(isCoreApm(code)).toBe(false);
+    },
+  );
+});
 
 describe('buildApmPaymentMethod', () => {
   // The SDK does not re-case the code. Rewriting it made the same value reach
