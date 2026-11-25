@@ -818,7 +818,7 @@ export class Tonder {
    * The engine for a payment that is about to start. Only card payments (new
    * card or saved card) and the alternative methods the transactions API serves
    * go to it, and only when the business is enabled for it; everything else
-   * (SPEI, an unknown code) stays on the Direct API. Apple Pay is decided by
+   * (an unknown code) stays on the Direct API. Apple Pay is decided by
    * {@link applePayEngine}.
    */
   private engineFor(inputType: string): PaymentEngine {

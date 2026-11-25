@@ -168,6 +168,9 @@ const CORE_APMS: [string, Record<string, unknown> | undefined][] = [
   ['neosurf', undefined],
   ['qr', undefined],
   ['transfer', undefined],
+  ['SPEI', undefined],
+  ['spei', undefined],
+  ['Spei', undefined],
 ];
 
 beforeEach(() => {
@@ -232,7 +235,7 @@ describe('Tonder APM engine — flag ON sends the APMs the core serves to the co
     expect(processBody(LEGACY_PROCESS).payment_method.type).toBe(' oxxopay');
   });
 
-  it.each(['spei', 'wallet'])(
+  it.each(['wallet'])(
     '%s is not an APM the core serves: legacy route, type as written',
     async (code) => {
       const { http, paths, processBody } = mockHttp();
@@ -270,24 +273,25 @@ describe('Tonder APM engine — flag ON sends the APMs the core serves to the co
     expect(processBody(CORE_PROCESS).payment_method.apm_config).toEqual(config);
   });
 
-  it('a core APM failure is never retried on the monolith', async () => {
-    const { http, paths } = mockHttp({
-      coreProcess: () =>
-        Promise.reject(
-          new AppError({
-            errorCode: ErrorKeyEnum.REQUEST_FAILED,
-            status_code: 503,
-          }),
-        ),
-    });
-    const tonder = await ready(http, { host: host() });
+  it.each(['oxxopay', 'SPEI'])(
+    'a core %s failure is never retried on the monolith',
+    async (code) => {
+      const { http, paths } = mockHttp({
+        coreProcess: () =>
+          Promise.reject(
+            new AppError({
+              errorCode: ErrorKeyEnum.REQUEST_FAILED,
+              status_code: 503,
+            }),
+          ),
+      });
+      const tonder = await ready(http, { host: host() });
 
-    await expect(tonder.pay(payInput('oxxopay'))).rejects.toBeInstanceOf(
-      AppError,
-    );
+      await expect(tonder.pay(payInput(code))).rejects.toBeInstanceOf(AppError);
 
-    expect(paths()).toEqual([`GET ${CORE_CONFIG}`, `POST ${CORE_PROCESS}`]);
-  });
+      expect(paths()).toEqual([`GET ${CORE_CONFIG}`, `POST ${CORE_PROCESS}`]);
+    },
+  );
 });
 
 describe('Tonder APM engine — flag OFF or not strictly true keeps the legacy path', () => {
@@ -317,35 +321,57 @@ describe('Tonder APM engine — flag OFF or not strictly true keeps the legacy p
 });
 
 describe("Tonder APM engine — the core's answer is handled as the monolith's", () => {
-  it('redirect mode: the buyer goes to next_action.redirect_to_url.url, no poll', async () => {
-    const h = host();
-    const { http, paths } = mockHttp();
-    const tonder = await ready(http, { host: h });
+  const displays = [
+    ['oxxopay', PAYFLOW],
+    ['SPEI', 'https://payflow.example/spei?token=core_display_tok'],
+  ];
 
-    const result = await tonder.pay(payInput('oxxopay'));
+  it.each(displays)(
+    'redirect mode for %s: the buyer goes to next_action.redirect_to_url.url, no poll',
+    async (code, url) => {
+      const h = host();
+      const { http, paths } = mockHttp({
+        coreProcess: () =>
+          Promise.resolve(
+            pending({ next_action: { redirect_to_url: { url } } }),
+          ),
+      });
+      const tonder = await ready(http, { host: h });
 
-    expect(h.redirect).toHaveBeenCalledWith(PAYFLOW);
-    expect(result.status).toBe('Pending');
-    expect(paths()).toEqual([`GET ${CORE_CONFIG}`, `POST ${CORE_PROCESS}`]);
-  });
+      const result = await tonder.pay(payInput(code));
 
-  it('embedded mode: the page opens in the host and stays up, no poll', async () => {
-    const h = host();
-    const { http, paths } = mockHttp();
-    const tonder = await ready(http, {
-      host: h,
-      config: { ...CONFIG, presentation_mode: 'embedded' },
-    });
+      expect(h.redirect).toHaveBeenCalledWith(url);
+      expect(result.status).toBe('Pending');
+      expect(paths()).toEqual([`GET ${CORE_CONFIG}`, `POST ${CORE_PROCESS}`]);
+    },
+  );
 
-    await tonder.pay(payInput('oxxopay'));
+  it.each(displays)(
+    'embedded mode for %s: the page opens in the host and stays up, no poll',
+    async (code, url) => {
+      const h = host();
+      const { http, paths } = mockHttp({
+        coreProcess: () =>
+          Promise.resolve(
+            pending({ next_action: { redirect_to_url: { url } } }),
+          ),
+      });
+      const tonder = await ready(http, {
+        host: h,
+        config: { ...CONFIG, presentation_mode: 'embedded' },
+      });
 
-    expect(h.open).toHaveBeenCalledWith(
-      PAYFLOW,
-      expect.objectContaining({ closable: true, allowClipboard: true }),
-    );
-    expect(h.close).not.toHaveBeenCalled();
-    expect(paths()).toEqual([`GET ${CORE_CONFIG}`, `POST ${CORE_PROCESS}`]);
-  });
+      const result = await tonder.pay(payInput(code));
+
+      expect(result.status).toBe('Pending');
+      expect(h.open).toHaveBeenCalledWith(
+        url,
+        expect.objectContaining({ closable: true, allowClipboard: true }),
+      );
+      expect(h.close).not.toHaveBeenCalled();
+      expect(paths()).toEqual([`GET ${CORE_CONFIG}`, `POST ${CORE_PROCESS}`]);
+    },
+  );
 
   it('a display_* block is returned to the merchant untouched', async () => {
     const next_action = {

@@ -10,11 +10,14 @@ describe('isCoreApm', () => {
     'neosurf',
     'qr',
     'Transfer',
+    'SPEI',
+    'spei',
+    'Spei',
   ])('%j is charged by the transactions API', (code) => {
     expect(isCoreApm(code)).toBe(true);
   });
 
-  it.each(['spei', 'card', 'saved_card', 'wallet', 'apple_pay', ''])(
+  it.each(['card', 'saved_card', 'wallet', 'apple_pay', ''])(
     '%j is not one of its alternative methods',
     (code) => {
       expect(isCoreApm(code)).toBe(false);

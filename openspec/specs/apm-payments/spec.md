@@ -36,7 +36,7 @@ No I/O, no side effects; builders MUST be pure functions.
 
 ### Requirement: APM Payments Follow the Business Engine
 
-For a business with `core_payments_enabled === true` (strictly the boolean), the system MUST send `oxxopay`, `mercadopago`, `safetypaycash`, `safetypaytransfer`, `neosurf`, `qr` and `transfer` (any case) to the transactions API's process route with `payment_method.type` as written (never re-cased) and `apm_config` unchanged; case MUST NOT change the engine. Any other code (SPEI, unknown) and every payment of another business MUST keep the Direct API route with the code as written. The answer is handled as the Direct API's: `next_action.redirect_to_url.url` is redirected or opened per `presentation_mode`, `display_*` data is returned untouched, the SDK never polls and has no verify call, and `getTransaction` reads the engine that created the payment. The transactions API stores and answers the type upper-case (a declared difference from the Direct API, which echoes the merchant's spelling): `getTransaction` and webhooks carry `OXXOPAY` for a payment sent as `oxxopay`; the SDK sends the code as written and does not re-case it. A failure is never retried on the other engine.
+For a business with `core_payments_enabled === true` (strictly the boolean), the system MUST send `oxxopay`, `mercadopago`, `safetypaycash`, `safetypaytransfer`, `neosurf`, `qr`, `transfer` and `spei` (any case) to the transactions API's process route with `payment_method.type` as written (never re-cased) and `apm_config` unchanged; case MUST NOT change the engine. Any unknown code and every payment of another business MUST keep the Direct API route with the code as written. The answer is handled as the Direct API's: `next_action.redirect_to_url.url` is redirected or opened per `presentation_mode`, `display_*` data is returned untouched, the SDK never polls and has no verify call, and `getTransaction` reads the engine that created the payment. The transactions API stores and answers the type upper-case (a declared difference from the Direct API, which echoes the merchant's spelling): this holds for every APM type, SPEI included, so `getTransaction` and webhooks carry `OXXOPAY` for a payment sent as `oxxopay` and `SPEI` for one sent as `spei`; the SDK sends the code as written and does not re-case it. A failure is never retried on the other engine.
 
 #### Scenario: OXXO for a core business
 
@@ -49,6 +49,14 @@ For a business with `core_payments_enabled === true` (strictly the boolean), the
 - GIVEN `core_payments_enabled` is absent, `false` or not the boolean `true`
 - WHEN `pay({ payment_method: { type: 'oxxopay' } })` runs
 - THEN `POST /api/v1/process/` carries `payment_method: { type: 'oxxopay' }`
+
+#### Scenario: SPEI for a core business
+
+- GIVEN `core_payments_enabled` is `true`
+- WHEN `pay()` is called with `payment_method.type` `SPEI` (any case)
+- THEN it calls the transactions API process route, preserving the method spelling
+- AND a `Pending` answer with payflow `/spei?token=…` is redirected or opened per `presentation_mode`, without polling
+- AND with the flag OFF the same input keeps the existing Direct API route and presentation
 
 ---
 
