@@ -837,9 +837,9 @@ APM/SPEI methods often settle asynchronously. Use webhooks for fulfillment.
 
 #### Which system charges an APM
 
-For a business enabled for the transactions API, `oxxopay`, `mercadopago`, `safetypaycash`, `safetypaytransfer`, `neosurf`, `qr`, `transfer` and `spei` are charged there, the same as cards; unknown codes stay on the Direct API. The case you write does not matter for the choice. Nothing else changes in your code: the answer, the redirect and the webhooks are the same, except that the transactions API answers the type upper-case (`getTransaction()`, webhooks).
+For a business enabled for the transactions API, `oxxopay`, `mercadopago`, `safetypaycash`, `safetypaytransfer`, `neosurf`, `qr`, `transfer` and `spei` are charged there, the same as cards; unknown codes stay on the Direct API. The case you write does not matter for the choice. The answer, redirect and webhooks stay the same, except that the transactions API stores and answers every APM type upper-case, SPEI included (`spei` comes back as `SPEI` in `getTransaction()` and webhooks).
 
-A core SPEI payment returns `Pending` with a payflow `/spei?token=…` link in `next_action.redirect_to_url.url`. The SDK redirects to it or opens it in embedded mode, without polling. Businesses off the transactions API keep the existing SPEI flow.
+SPEI keeps the same presentation rules on both systems: with `next_action.redirect_to_url.url`, `redirect` navigates to the hosted page and `embedded` opens a closable overlay, returning `Pending` immediately without polling. Without a URL, neither mode opens anything. The result preserves the response’s flat `clabe` and `bank_name` for merchants rendering their own instructions. The core must supply those fields alongside its payflow `/spei?token=…` link; the SDK does not extract settlement data from the token. Legacy SPEI uses the monolith’s query-string payflow link. A core SPEI payment therefore changes the link format and uses the core’s payment IDs and webhook contract.
 
 ### Apple Pay
 
@@ -1440,7 +1440,7 @@ A transaction that needs 3DS or hosted instructions can include `next_action`:
 }
 ```
 
-APM/SPEI responses may include settlement fields:
+A SPEI response carries flat settlement fields alongside its hosted-page link. For a core payment, the response contract is:
 
 ```json
 {
@@ -1450,11 +1450,18 @@ APM/SPEI responses may include settlement fields:
   "amount": 150,
   "currency": "MXN",
   "clabe": "646180123400000001",
-  "bank_name": "STP",
-  "payment_instructions": { "reference": "1234567890" },
-  "voucher_pdf": "https://..."
+  "bank_name": "Nvio Pagos México",
+  "next_action": {
+    "redirect_to_url": {
+      "url": "https://payflow.example/spei?token=...",
+      "return_url": "https://merchant.example/return",
+      "verify_transaction_status_url": "/transactions/v1/txn_123"
+    }
+  }
 }
 ```
+
+The core must also preserve the legacy redirect member’s `return_url` and `verify_transaction_status_url` fields, using its own status route. The SDK returns `clabe`, `bank_name` and `next_action` from the backend answer unchanged, normalizing only `amount` to a number. Bitso SPEI’s legacy response does not supply a top-level `reference` or `payment_instructions`; the SDK does not invent them. If the backend supplies `payment_instructions`, `reference` or `voucher_pdf`, those optional fields are also preserved. Other APMs may supply `payment_instructions` and `voucher_pdf`.
 
 #### Throws
 

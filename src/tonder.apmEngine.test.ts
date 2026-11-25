@@ -106,6 +106,7 @@ function host(): ThreeDsHostPort & {
 interface Routes {
   config?: BusinessConfig;
   coreProcess?: (o: HttpRequestOptions) => Promise<unknown>;
+  legacyProcess?: (o: HttpRequestOptions) => Promise<unknown>;
 }
 
 function mockHttp(routes: Routes = {}) {
@@ -119,6 +120,7 @@ function mockHttp(routes: Routes = {}) {
       return (routes.coreProcess ?? (() => Promise.resolve(pending())))(o);
     }
     if (o.path === LEGACY_PROCESS) {
+      if (routes.legacyProcess) return routes.legacyProcess(o);
       return Promise.resolve(
         pending({
           id: 'tx_legacy_apm_1',
@@ -235,9 +237,9 @@ describe('Tonder APM engine — flag ON sends the APMs the core serves to the co
     expect(processBody(LEGACY_PROCESS).payment_method.type).toBe(' oxxopay');
   });
 
-  it.each(['wallet'])(
-    '%s is not an APM the core serves: legacy route, type as written',
-    async (code) => {
+  it('unknown codes stay on the legacy route with their type as written', async () => {
+    for (const code of ['wallet', 'custom_transfer']) {
+      sessionStorage.clear();
       const { http, paths, processBody } = mockHttp();
       const tonder = await ready(http, { host: host() });
 
@@ -245,8 +247,8 @@ describe('Tonder APM engine — flag ON sends the APMs the core serves to the co
 
       expect(paths()).toEqual([`GET ${CORE_CONFIG}`, `POST ${LEGACY_PROCESS}`]);
       expect(processBody(LEGACY_PROCESS).payment_method.type).toBe(code);
-    },
-  );
+    }
+  });
 
   it('the retired { type: "apm" } wrapper is rejected before any process call', async () => {
     const { http, paths } = mockHttp();
@@ -317,6 +319,107 @@ describe('Tonder APM engine — flag OFF or not strictly true keeps the legacy p
         ...(config ? { apm_config: config } : {}),
       });
     }
+  });
+});
+
+const LEGACY_SPEI = speiFixture(
+  'https://payflow.example/spei?clabe=000000000000000001&transaction_reference=deposit_ref',
+  '/transactions/tx_core_apm_1/',
+);
+const CORE_SPEI = speiFixture(
+  'https://payflow.example/spei?token=core_display_tok',
+  '/transactions/v1/tx_core_apm_1',
+);
+
+function speiFixture(url: string, verify: string) {
+  return {
+    url,
+    next_action: {
+      redirect_to_url: {
+        url,
+        return_url: 'https://merchant.example/return',
+        verify_transaction_status_url: verify,
+      },
+    },
+  };
+}
+
+describe('Tonder SPEI — settlement and presentation parity', () => {
+  for (const coreEnabled of [false, true]) {
+    for (const mode of ['redirect', 'embedded'] as const) {
+      for (const hosted of [false, true]) {
+        it(`${coreEnabled ? 'core' : 'legacy'}, ${mode}, ${hosted ? 'hosted' : 'instructions only'}: preserves settlement fields without polling`, async () => {
+          const h = host();
+          const { url, next_action } = coreEnabled ? CORE_SPEI : LEGACY_SPEI;
+          const response = pending({
+            clabe: '000000000000000001',
+            bank_name: 'Nvio Pagos México',
+            next_action: hosted ? next_action : undefined,
+          });
+          const redirect = next_action.redirect_to_url;
+          const { http, paths } = mockHttp({
+            config: businessConfig(coreEnabled),
+            coreProcess: () => Promise.resolve(response),
+            legacyProcess: () => Promise.resolve(response),
+          });
+          const tonder = await ready(http, {
+            host: h,
+            config: { ...CONFIG, presentation_mode: mode },
+          });
+
+          const result = await tonder.pay(payInput('SPEI'));
+
+          expect(result).toEqual({ ...response, amount: 150 });
+          expect(result.clabe).toBe('000000000000000001');
+          expect(result.bank_name).toBe('Nvio Pagos México');
+          if (hosted) {
+            expect(result.next_action?.redirect_to_url).toEqual({
+              url: redirect.url,
+              return_url: 'https://merchant.example/return',
+              verify_transaction_status_url:
+                redirect.verify_transaction_status_url,
+            });
+          }
+          expect(result).not.toHaveProperty('reference');
+          expect(result).not.toHaveProperty('transaction_reference');
+          expect(result).not.toHaveProperty('payment_instructions');
+          expect(paths()).toEqual([
+            `GET ${CORE_CONFIG}`,
+            `POST ${coreEnabled ? CORE_PROCESS : LEGACY_PROCESS}`,
+          ]);
+          if (hosted && mode === 'redirect') {
+            expect(h.redirect).toHaveBeenCalledWith(url);
+            expect(h.open).not.toHaveBeenCalled();
+          } else if (hosted) {
+            expect(h.open).toHaveBeenCalledWith(
+              url,
+              expect.objectContaining({ closable: true, allowClipboard: true }),
+            );
+            expect(h.redirect).not.toHaveBeenCalled();
+          } else {
+            expect(h.redirect).not.toHaveBeenCalled();
+            expect(h.open).not.toHaveBeenCalled();
+          }
+          expect(h.close).not.toHaveBeenCalled();
+        });
+      }
+    }
+  }
+
+  it('passes optional settlement instructions and reference through from the core answer', async () => {
+    const response = pending({
+      clabe: '000000000000000001',
+      bank_name: 'Nvio Pagos México',
+      reference: 'deposit_ref',
+      payment_instructions: { reference: 'deposit_ref' },
+    });
+    const { http } = mockHttp({ coreProcess: () => Promise.resolve(response) });
+    const tonder = await ready(http, { host: host() });
+
+    expect(await tonder.pay(payInput('SPEI'))).toEqual({
+      ...response,
+      amount: 150,
+    });
   });
 });
 
