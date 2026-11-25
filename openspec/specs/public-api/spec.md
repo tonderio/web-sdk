@@ -350,8 +350,10 @@ The business configuration carries `core_payments_enabled`. When it is `true`,
 with the same body and the same `X-App-Origin` as the legacy route call, and every
 later read of that payment (`getTransaction()` and the embedded 3DS poll) MUST
 call `GET /transactions/v1/{id}`. When it is `false` or absent, `pay()` MUST
-behave exactly as before, on the legacy route. Other payment methods (alternative
-methods and Apple Pay) MUST stay on the legacy route whatever the flag says.
+behave exactly as before, on the legacy route. The alternative methods the
+transactions API charges follow the "APM Payments Follow the Business Engine"
+requirement of the apm-payments spec; any other method (SPEI, an unknown code)
+MUST stay on the legacy route whatever the flag says.
 
 The engine MUST be fixed when a payment starts: the SDK MUST remember it by
 transaction id (in memory and, when available, `sessionStorage`) so the payment

@@ -44,4 +44,27 @@ export function buildApmPaymentMethod({
   return method;
 }
 
+/**
+ * The alternative methods the transactions API charges (compared upper-case).
+ * Anything else (SPEI, an unknown code) is not one of them and stays on the
+ * Direct API, whatever the business flag says.
+ */
+const CORE_APM_TYPES: ReadonlySet<string> = new Set([
+  'OXXOPAY',
+  'MERCADOPAGO',
+  'SAFETYPAYCASH',
+  'SAFETYPAYTRANSFER',
+  'NEOSURF',
+  'QR',
+  'TRANSFER',
+]);
+
+/**
+ * Whether the transactions API charges this method code. Matching ignores case
+ * and only picks the engine: the code itself is sent as written.
+ */
+export function isCoreApm(type: string): boolean {
+  return CORE_APM_TYPES.has(type.toUpperCase());
+}
+
 /** Build the SPEI `payment_method`. */

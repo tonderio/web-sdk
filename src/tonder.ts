@@ -19,7 +19,10 @@ import {
   buildCardPaymentMethod,
   buildSavedCardPaymentMethod,
 } from './core/strategies/card.strategy';
-import { buildApmPaymentMethod } from './core/strategies/apm.strategy';
+import {
+  buildApmPaymentMethod,
+  isCoreApm,
+} from './core/strategies/apm.strategy';
 import {
   buildProcessBody,
   resolveRequestId,
@@ -813,15 +816,17 @@ export class Tonder {
 
   /**
    * The engine for a payment that is about to start. Only card payments (new
-   * card or saved card) go to the transactions API, and only when the business
-   * is enabled for it; everything else stays on the Direct API. Apple Pay is
-   * decided by {@link applePayEngine}.
+   * card or saved card) and the alternative methods the transactions API serves
+   * go to it, and only when the business is enabled for it; everything else
+   * (SPEI, an unknown code) stays on the Direct API. Apple Pay is decided by
+   * {@link applePayEngine}.
    */
   private engineFor(inputType: string): PaymentEngine {
-    const isCard =
+    const onCore =
       Tonder.isMethodType(inputType, 'card') ||
-      Tonder.isMethodType(inputType, 'saved_card');
-    return isCard && this.isCoreBusiness() ? 'core' : 'legacy';
+      Tonder.isMethodType(inputType, 'saved_card') ||
+      isCoreApm(inputType);
+    return onCore && this.isCoreBusiness() ? 'core' : 'legacy';
   }
 
   /** The engine of an Apple Pay charge, read when the shopper authorizes it. */
