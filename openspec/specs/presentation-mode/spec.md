@@ -1,11 +1,13 @@
 # Spec: Presentation Mode (SDK-driven hosted-flow presentation)
 
 ## Scope
+
 How `@tonder.io/web-sdk` presents a hosted `next_action` flow (card 3DS or
 APM/SPEI hosted page) returned by the backend. Client-side only — no value is
 sent to the backend.
 
 ## Config
+
 - `presentationMode: 'embedded' | 'redirect'` (default `'redirect'`). Renamed
   from `threeDsMode`.
 - Client-only: `presentationMode` is NEVER included in the `POST /process`
@@ -61,6 +63,25 @@ APMs settle via webhook — the SDK MUST NOT poll them.
 - `redirect`: navigate to the url; return pending.
 - instructions-only (no url): return the transaction unchanged.
 
+These rules apply equally to legacy and core SPEI. A core response uses payflow
+`/spei?token=…`; a legacy response uses the monolith's query-string URL. Both
+responses MUST carry flat `clabe` and `bank_name` alongside `next_action` so the
+merchant can also render settlement details from `pay()`. The redirect member
+also preserves `return_url` and `verify_transaction_status_url` (the latter using
+the owning engine’s status route), even though the SDK does not poll SPEI. The SDK MUST preserve
+those fields from the answer, normalize `amount` to a number, and MUST NOT decode
+the display token or fabricate missing settlement fields. Optional
+`payment_instructions`, `reference` and `voucher_pdf` are preserved when supplied;
+they are not guaranteed by the legacy Bitso SPEI response.
+
+#### Scenario: Core and legacy SPEI preserve the same presentation decision
+
+- GIVEN a SPEI response from either engine with `clabe` and `bank_name`
+- WHEN `next_action.redirect_to_url.url` is present
+- THEN `redirect` navigates to that URL and `embedded` opens a closable overlay
+- AND both modes immediately return the `Pending` transaction with settlement fields and `next_action`, without polling
+- AND when there is no URL, both modes return the settlement fields without navigating or opening an overlay
+
 #### Scenario: APM hosted page presents without a merchant container
 
 - GIVEN `presentationMode: 'embedded'` and an APM/SPEI payment producing a hosted-page `next_action`
@@ -107,4 +128,5 @@ transaction returned from `pay()`.
 - THEN none of these flat fields exist
 
 ## Notes
+
 Further refined by change `public-api-consistency`. All presentation happens via SDK-owned modals with callback-driven closing for APM overlays and auto-closing for 3DS overlays. As of `public-api-consistency`, presentation callbacks live under `config.events.presentation.*` rather than flat `TonderConfig` fields, and card 3DS completion is exposed through the `pay()` return value.

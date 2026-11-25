@@ -46,7 +46,7 @@ export function buildApmPaymentMethod({
 
 /**
  * The alternative methods the transactions API charges (compared upper-case).
- * Anything else (SPEI, an unknown code) is not one of them and stays on the
+ * Anything else (an unknown code) is not one of them and stays on the
  * Direct API, whatever the business flag says.
  */
 const CORE_APM_TYPES: ReadonlySet<string> = new Set([
@@ -57,6 +57,7 @@ const CORE_APM_TYPES: ReadonlySet<string> = new Set([
   'NEOSURF',
   'QR',
   'TRANSFER',
+  'SPEI',
 ]);
 
 /**

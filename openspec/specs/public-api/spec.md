@@ -352,7 +352,7 @@ later read of that payment (`getTransaction()` and the embedded 3DS poll) MUST
 call `GET /transactions/v1/{id}`. When it is `false` or absent, `pay()` MUST
 behave exactly as before, on the legacy route. The alternative methods the
 transactions API charges follow the "APM Payments Follow the Business Engine"
-requirement of the apm-payments spec; any other method (SPEI, an unknown code)
+requirement of the apm-payments spec; any unknown method code
 MUST stay on the legacy route whatever the flag says.
 
 The engine MUST be fixed when a payment starts: the SDK MUST remember it by

@@ -12,6 +12,8 @@
 export interface BackendNextAction {
   redirect_to_url?: {
     url: string;
+    /** The merchant's return URL, echoed by the backend. */
+    return_url?: string;
     verify_transaction_status_url?: string;
   };
   /**

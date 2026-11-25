@@ -141,6 +141,13 @@ export function resolveRedirectUrl(
   return nextAction?.redirect_to_url?.url ?? null;
 }
 
+/** The redirect member carries the merchant's own `return_url` back. */
+export function resolveReturnUrl(
+  nextAction: BackendNextAction | undefined,
+): string | null {
+  return nextAction?.redirect_to_url?.return_url ?? null;
+}
+
 export function afterPay(transaction: RawTransaction): string | null {
   return transaction.status === 'Pending'
     ? resolveRedirectUrl(transaction.next_action)
